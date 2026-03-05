@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Fonts ─────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "Cabinet Grotesk";
+  src: url("/assets/fonts/CabinetGrotesk-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "General Sans";
+  src: url("/assets/fonts/GeneralSans-Variable.woff2") format("woff2");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+
+    /* ── Core Palette: Slate Navy + Electric Indigo accent ── */
+    --background: 0.975 0.004 250;
+    --foreground: 0.18 0.025 255;
+
+    --card: 1 0 0;
+    --card-foreground: 0.18 0.025 255;
+
+    --popover: 1 0 0;
+    --popover-foreground: 0.18 0.025 255;
+
+    /* Primary: rich indigo */
+    --primary: 0.42 0.19 265;
+    --primary-foreground: 0.99 0 0;
+
+    /* Secondary: pale indigo tint */
+    --secondary: 0.94 0.018 265;
+    --secondary-foreground: 0.35 0.14 265;
+
+    --muted: 0.95 0.008 250;
+    --muted-foreground: 0.52 0.028 255;
+
+    /* Accent: vibrant teal */
+    --accent: 0.91 0.04 195;
+    --accent-foreground: 0.25 0.1 200;
+
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+
+    --border: 0.88 0.018 255;
+    --input: 0.91 0.015 255;
+    --ring: 0.42 0.19 265;
+
+    /* Status colors */
+    --status-done: 0.58 0.16 155;
+    --status-pending: 0.75 0.18 75;
+    --status-empty: 0.72 0.03 255;
+
+    /* Chart */
+    --chart-1: 0.55 0.22 265;
+    --chart-2: 0.58 0.16 155;
+    --chart-3: 0.65 0.2 30;
+    --chart-4: 0.6 0.18 195;
+    --chart-5: 0.7 0.2 320;
+
+    --sidebar: 0.18 0.04 265;
+    --sidebar-foreground: 0.94 0.018 265;
+    --sidebar-primary: 0.55 0.22 265;
+    --sidebar-primary-foreground: 0.99 0 0;
+    --sidebar-accent: 0.28 0.05 265;
+    --sidebar-accent-foreground: 0.94 0.018 265;
+    --sidebar-border: 0.28 0.04 265;
+    --sidebar-ring: 0.55 0.22 265;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "General Sans", system-ui, sans-serif;
+    font-feature-settings: "ss01" 1, "cv01" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Cabinet Grotesk", system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* ─── Custom animations ───────────────────────────────────────────────────── */
+@layer utilities {
+  .animate-fade-in {
+    animation: fade-in 0.4s ease-out both;
+  }
+  .animate-slide-up {
+    animation: slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .animate-scale-in {
+    animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Drag drop zone ─────────────────────────────────────────────────────── */
+.dropzone-active {
+  border-color: oklch(var(--primary)) !important;
+  background-color: oklch(var(--secondary)) !important;
+}
