@@ -39,6 +39,7 @@ import {
   KeyRound,
   Loader2,
   LogOut,
+  Search,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -62,6 +63,7 @@ import {
   useBulkUpsertOrders,
   useDeleteOrder,
   useGetAllOrders,
+  useGetOrder,
   useIsAdmin,
   useUpsertOrder,
 } from "../hooks/useQueries";
@@ -71,6 +73,8 @@ import {
 const PREVIEW_LIMIT = 10;
 const ADMIN_USERNAME = "arpit2127";
 const ADMIN_PASSWORD = "TyGoD@2127";
+const BO_USERNAME = "BO";
+const BO_PASSWORD = "SiYaRaM@802";
 
 const STATUS_KEYS = [
   "status1",
@@ -103,13 +107,16 @@ const STATUS_LABELS = [
 type XLSXLib = {
   read: (
     data: ArrayBuffer,
-    opts: { type: string },
+    opts: { type: string; cellDates?: boolean; raw?: boolean },
   ) => {
     SheetNames: string[];
     Sheets: Record<string, unknown>;
   };
   utils: {
-    sheet_to_json: <T>(sheet: unknown, opts?: { defval?: unknown }) => T[];
+    sheet_to_json: <T>(
+      sheet: unknown,
+      opts?: { defval?: unknown; raw?: boolean },
+    ) => T[];
     aoa_to_sheet: (data: unknown[][]) => unknown;
     book_new: () => {
       SheetNames: string[];
@@ -173,8 +180,11 @@ async function parseExcelFile(file: File): Promise<OrderStatus[]> {
           }
           const headers = lines[0].split(",").map((h) => h.trim());
           const rows = lines.slice(1).map((line) => {
-            const vals = line.split(",").map((v) => v.trim());
-            const obj: Record<string, string> = {};
+            // Split on comma but preserve values inside quoted strings
+            const vals = line
+              .split(",")
+              .map((v) => v.trim().replace(/^"|"$/g, ""));
+            const obj: Record<string, unknown> = {};
             headers.forEach((h, i) => {
               obj[h] = vals[i] ?? "";
             });
@@ -210,13 +220,21 @@ async function parseExcelFile(file: File): Promise<OrderStatus[]> {
           reject(new Error("Failed to read file data"));
           return;
         }
-        const workbook = XLSX.read(data as ArrayBuffer, { type: "array" });
+        // raw: false → SheetJS formats all values as strings (dates become
+        // their display string, numbers stay as their formatted value).
+        // This ensures dates, numbers, special characters all come through.
+        const workbook = XLSX.read(data as ArrayBuffer, {
+          type: "array",
+          raw: false,
+          cellDates: false,
+        });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
           defval: "",
+          raw: false,
         });
-        const orders = mapRowsToOrders(rows);
+        const orders = mapRowsToOrders(rows as Record<string, unknown>[]);
         const valid = orders.filter((o) => o.orderId !== "");
         if (valid.length === 0) {
           reject(
@@ -236,12 +254,15 @@ async function parseExcelFile(file: File): Promise<OrderStatus[]> {
   });
 }
 
-function mapRowsToOrders(rows: Record<string, string>[]): OrderStatus[] {
+function mapRowsToOrders(rows: Record<string, unknown>[]): OrderStatus[] {
   return rows.map((row) => {
     const get = (...keys: string[]) => {
       for (const k of keys) {
-        if (row[k] !== undefined && row[k] !== "")
-          return row[k].toString().trim();
+        const v = row[k];
+        // Accept any truthy value OR the number 0 — coerce to string
+        if (v !== undefined && v !== null && v !== "") {
+          return String(v).trim();
+        }
       }
       return "";
     };
@@ -1156,6 +1177,297 @@ function UserManagement() {
   );
 }
 
+// ─── BO Panel (restricted update-only user) ───────────────────────────────────
+
+interface BOPanelProps {
+  onLogout: () => void;
+}
+
+function BOPanel({ onLogout }: BOPanelProps) {
+  const [searchInput, setSearchInput] = useState("");
+  const [searchedId, setSearchedId] = useState<string | null>(null);
+  const [statuses, setStatuses] = useState<Record<string, string>>(() =>
+    Object.fromEntries(STATUS_KEYS.map((k) => [k, ""])),
+  );
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+
+  const { data: order, isFetching: isSearching } = useGetOrder(searchedId);
+  const upsertOrder = useUpsertOrder();
+
+  // When a new order is found, pre-fill the fields
+  const prevSearchedId = useRef<string | null>(null);
+  if (searchedId !== prevSearchedId.current) {
+    prevSearchedId.current = searchedId;
+    if (order) {
+      const filled = Object.fromEntries(
+        STATUS_KEYS.map((k) => [k, (order[k] as string) ?? ""]),
+      );
+      setStatuses(filled);
+      setSaveSuccess(false);
+      setSaveError(false);
+    }
+  }
+
+  // Also pre-fill when order data arrives (async)
+  const prevOrderRef = useRef<OrderStatus | null | undefined>(undefined);
+  if (order !== prevOrderRef.current) {
+    prevOrderRef.current = order;
+    if (order && searchedId) {
+      const filled = Object.fromEntries(
+        STATUS_KEYS.map((k) => [k, (order[k] as string) ?? ""]),
+      );
+      setStatuses(filled);
+      setSaveSuccess(false);
+      setSaveError(false);
+    }
+  }
+
+  const handleSearch = () => {
+    const trimmed = searchInput.trim();
+    if (!trimmed) return;
+    setSaveSuccess(false);
+    setSaveError(false);
+    setSearchedId(trimmed);
+  };
+
+  const handleStatusChange = (key: string, value: string) => {
+    setStatuses((prev) => ({ ...prev, [key]: value }));
+    setSaveSuccess(false);
+    setSaveError(false);
+  };
+
+  const handleSave = async () => {
+    if (!order || !searchedId) return;
+    setSaveSuccess(false);
+    setSaveError(false);
+    try {
+      await upsertOrder.mutateAsync({
+        orderId: searchedId,
+        ...statuses,
+      } as OrderStatus);
+      toast.success(`Order "${searchedId}" updated successfully!`);
+      setSaveSuccess(true);
+      setSaveError(false);
+    } catch {
+      toast.error("Failed to save order. Please try again.");
+      setSaveSuccess(false);
+      setSaveError(true);
+    }
+  };
+
+  const orderNotFound = searchedId && !isSearching && !order;
+  const orderFound = searchedId && !isSearching && order;
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between animate-slide-up">
+        <div>
+          <h2 className="font-display text-3xl font-bold text-foreground tracking-tight">
+            Update Order Status
+          </h2>
+          <p className="text-muted-foreground mt-1">
+            Search for an existing order to update its status fields.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge variant="secondary" className="text-xs font-medium px-3 py-1">
+            Logged in as: {BO_USERNAME}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onLogout}
+            data-ocid="admin.secondary_button"
+            className="gap-2 text-muted-foreground"
+          >
+            <LogOut className="w-4 h-4" />
+            Log Out
+          </Button>
+        </div>
+      </div>
+
+      {/* Search card */}
+      <Card className="shadow-sm border-border">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-primary" />
+            <CardTitle className="text-base font-semibold">
+              Find Order
+            </CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Enter the Order ID to look up an existing order.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-3">
+            <Input
+              placeholder="e.g. ORD-2024-001"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSearch();
+              }}
+              data-ocid="bo.search_input"
+              className="font-mono flex-1"
+            />
+            <Button
+              onClick={handleSearch}
+              disabled={!searchInput.trim() || isSearching}
+              data-ocid="bo.primary_button"
+              className="gap-2 font-semibold shrink-0"
+            >
+              {isSearching ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Searching…
+                </>
+              ) : (
+                <>
+                  <Search className="w-4 h-4" />
+                  Find Order
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Loading */}
+      {isSearching && (
+        <div
+          data-ocid="bo.loading_state"
+          className="flex items-center justify-center gap-3 py-12"
+        >
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Searching…</p>
+        </div>
+      )}
+
+      {/* Empty / not-found state */}
+      {!isSearching && (!searchedId || orderNotFound) && (
+        <div
+          data-ocid="bo.empty_state"
+          className="flex flex-col items-center gap-3 py-14 text-center"
+        >
+          <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
+            <Search className="w-7 h-7 text-muted-foreground" />
+          </div>
+          {orderNotFound ? (
+            <>
+              <p className="font-semibold text-foreground">Order not found</p>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                No order with ID{" "}
+                <span className="font-mono font-semibold">{searchedId}</span>{" "}
+                exists. Only existing orders can be updated.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold text-foreground">
+                Search for an order
+              </p>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                Only existing orders can be updated. Search for an Order ID to
+                begin.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Order edit form */}
+      {orderFound && (
+        <Card className="shadow-sm border-border animate-slide-up">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ClipboardEdit className="w-4 h-4 text-primary" />
+              <CardTitle className="text-base font-semibold">
+                Editing Order:{" "}
+                <span className="font-mono text-primary">{searchedId}</span>
+              </CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Update the fields below and click Save Changes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Status fields grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {STATUS_KEYS.map((key, i) => (
+                <div key={key} className="space-y-1.5">
+                  <Label
+                    htmlFor={`bo-${key}`}
+                    className="text-sm font-medium text-muted-foreground"
+                  >
+                    {STATUS_LABELS[i]}
+                  </Label>
+                  <Input
+                    id={`bo-${key}`}
+                    placeholder={`Enter ${STATUS_LABELS[i]}`}
+                    value={statuses[key]}
+                    onChange={(e) => handleStatusChange(key, e.target.value)}
+                    data-ocid={`bo.${key}_input`}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Feedback */}
+            {saveSuccess && (
+              <div
+                data-ocid="bo.success_state"
+                className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-3 animate-fade-in"
+              >
+                <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+                <p className="text-sm font-medium text-green-700">
+                  Order updated successfully!
+                </p>
+              </div>
+            )}
+
+            {saveError && (
+              <div
+                data-ocid="bo.error_state"
+                className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 animate-fade-in"
+              >
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                <p className="text-sm font-medium text-destructive">
+                  Failed to save order. Please try again.
+                </p>
+              </div>
+            )}
+
+            {/* Save button */}
+            <div className="pt-1">
+              <Button
+                onClick={() => void handleSave()}
+                disabled={upsertOrder.isPending}
+                data-ocid="bo.save_button"
+                className="gap-2 font-semibold"
+              >
+                {upsertOrder.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Save Changes
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── Login Form ───────────────────────────────────────────────────────────────
 
 interface LoginFormProps {
@@ -1176,7 +1488,10 @@ function LoginForm({ onLogin }: LoginFormProps) {
     // Simulate a brief check
     await new Promise((r) => setTimeout(r, 300));
 
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    if (
+      (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) ||
+      (username === BO_USERNAME && password === BO_PASSWORD)
+    ) {
       onLogin(username);
     } else {
       setError(true);
@@ -1278,9 +1593,14 @@ function LoginForm({ onLogin }: LoginFormProps) {
 interface AdminPanelProps {
   onLogout: () => void;
   isMasterAdmin?: boolean;
+  username?: string;
 }
 
-function AdminPanel({ onLogout, isMasterAdmin = false }: AdminPanelProps) {
+function AdminPanel({
+  onLogout,
+  isMasterAdmin = false,
+  username,
+}: AdminPanelProps) {
   const { data: isAdmin, isFetching: isCheckingAdmin } = useIsAdmin();
   const { isInitializing } = useInternetIdentity();
 
@@ -1342,16 +1662,26 @@ function AdminPanel({ onLogout, isMasterAdmin = false }: AdminPanelProps) {
             Manage orders, upload Excel files, and control user access
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onLogout}
-          data-ocid="admin.secondary_button"
-          className="gap-2 text-muted-foreground"
-        >
-          <LogOut className="w-4 h-4" />
-          Log Out
-        </Button>
+        <div className="flex items-center gap-3">
+          {username && (
+            <Badge
+              variant="secondary"
+              className="text-xs font-medium px-3 py-1"
+            >
+              Logged in as: {username}
+            </Badge>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onLogout}
+            data-ocid="admin.secondary_button"
+            className="gap-2 text-muted-foreground"
+          >
+            <LogOut className="w-4 h-4" />
+            Log Out
+          </Button>
+        </div>
       </div>
 
       {/* Inner tabs */}
@@ -1441,10 +1771,15 @@ export function AdminUpload() {
     return <LoginForm onLogin={handleLogin} />;
   }
 
+  if (loggedInUser === BO_USERNAME) {
+    return <BOPanel onLogout={handleLogout} />;
+  }
+
   return (
     <AdminPanel
       onLogout={handleLogout}
       isMasterAdmin={loggedInUser === ADMIN_USERNAME}
+      username={loggedInUser}
     />
   );
 }
