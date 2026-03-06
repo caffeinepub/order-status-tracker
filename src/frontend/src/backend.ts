@@ -100,6 +100,7 @@ export interface OrderStatus {
     status8: string;
     status9: string;
     status10: string;
+    status11: string;
     orderId: string;
 }
 export interface UserProfile {
@@ -118,7 +119,7 @@ export interface backendInterface {
     getAllOrders(): Promise<Array<OrderStatus>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
-    getOrder(orderId: string): Promise<OrderStatus | null>;
+    getOrder(_orderId: string): Promise<OrderStatus | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;

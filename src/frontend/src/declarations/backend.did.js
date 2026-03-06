@@ -24,6 +24,7 @@ export const OrderStatus = IDL.Record({
   'status8' : IDL.Text,
   'status9' : IDL.Text,
   'status10' : IDL.Text,
+  'status11' : IDL.Text,
   'orderId' : IDL.Text,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
@@ -66,6 +67,7 @@ export const idlFactory = ({ IDL }) => {
     'status8' : IDL.Text,
     'status9' : IDL.Text,
     'status10' : IDL.Text,
+    'status11' : IDL.Text,
     'orderId' : IDL.Text,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });

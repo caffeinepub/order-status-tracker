@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -87,12 +88,14 @@ const STATUS_KEYS = [
   "status8",
   "status9",
   "status10",
+  "status11",
 ] as const;
 
 const STATUS_LABELS = [
   "Name",
   "Date of Order ID",
   "Payment",
+  "Material Dispatched",
   "Installation",
   "File Submission",
   "Meter",
@@ -164,7 +167,93 @@ async function getXLSX(): Promise<XLSXLib> {
 
 // ─── Excel parser ─────────────────────────────────────────────────────────────
 
-async function parseExcelFile(file: File): Promise<OrderStatus[]> {
+// Maps raw column header strings to status keys (same aliases as mapRowsToOrders)
+const STATUS_COLUMN_ALIASES: Record<string, (typeof STATUS_KEYS)[number]> = {
+  status1: "status1",
+  Status1: "status1",
+  STATUS1: "status1",
+  Name: "status1",
+  name: "status1",
+  NAME: "status1",
+  status2: "status2",
+  Status2: "status2",
+  STATUS2: "status2",
+  "Date of Order ID": "status2",
+  "date of order id": "status2",
+  "DATE OF ORDER ID": "status2",
+  status3: "status3",
+  Status3: "status3",
+  STATUS3: "status3",
+  Payment: "status3",
+  payment: "status3",
+  PAYMENT: "status3",
+  status4: "status4",
+  Status4: "status4",
+  STATUS4: "status4",
+  "Material Dispatched": "status4",
+  "material dispatched": "status4",
+  "MATERIAL DISPATCHED": "status4",
+  status5: "status5",
+  Status5: "status5",
+  STATUS5: "status5",
+  Installation: "status5",
+  installation: "status5",
+  INSTALLATION: "status5",
+  status6: "status6",
+  Status6: "status6",
+  STATUS6: "status6",
+  "File Submission": "status6",
+  "file submission": "status6",
+  "FILE SUBMISSION": "status6",
+  status7: "status7",
+  Status7: "status7",
+  STATUS7: "status7",
+  Meter: "status7",
+  meter: "status7",
+  METER: "status7",
+  status8: "status8",
+  Status8: "status8",
+  STATUS8: "status8",
+  Internet: "status8",
+  internet: "status8",
+  INTERNET: "status8",
+  status9: "status9",
+  Status9: "status9",
+  STATUS9: "status9",
+  Subsidy: "status9",
+  subsidy: "status9",
+  SUBSIDY: "status9",
+  status10: "status10",
+  Status10: "status10",
+  STATUS10: "status10",
+  "Warranty File": "status10",
+  "warranty file": "status10",
+  "WARRANTY FILE": "status10",
+  status11: "status11",
+  Status11: "status11",
+  STATUS11: "status11",
+  "Any Pendency": "status11",
+  "any pendency": "status11",
+  "ANY PENDENCY": "status11",
+};
+
+function detectPresentColumns(
+  rawHeaders: string[],
+): Set<(typeof STATUS_KEYS)[number]> {
+  const present = new Set<(typeof STATUS_KEYS)[number]>();
+  for (const header of rawHeaders) {
+    const key = STATUS_COLUMN_ALIASES[header.trim()];
+    if (key) present.add(key);
+  }
+  return present;
+}
+
+type ParseResult = {
+  orders: OrderStatus[];
+  presentColumns: Set<(typeof STATUS_KEYS)[number]>;
+};
+
+async function parseExcelFile(file: File): Promise<ParseResult> {
   const isCsv = file.name.match(/\.csv$/i);
 
   if (isCsv) {
@@ -179,6 +268,7 @@ async function parseExcelFile(file: File): Promise<OrderStatus[]> {
             return;
           }
           const headers = lines[0].split(",").map((h) => h.trim());
+          const presentColumns = detectPresentColumns(headers);
           const rows = lines.slice(1).map((line) => {
             // Split on comma but preserve values inside quoted strings
             const vals = line
@@ -199,7 +289,7 @@ async function parseExcelFile(file: File): Promise<OrderStatus[]> {
               ),
             );
           } else {
-            resolve(valid);
+            resolve({ orders: valid, presentColumns });
           }
         } catch (err) {
           reject(err);
@@ -234,6 +324,9 @@ async function parseExcelFile(file: File): Promise<OrderStatus[]> {
           defval: "",
           raw: false,
         });
+        // Detect present columns from the raw keys of the first row
+        const rawHeaders = Object.keys(rows[0] ?? {});
+        const presentColumns = detectPresentColumns(rawHeaders);
         const orders = mapRowsToOrders(rows as Record<string, unknown>[]);
         const valid = orders.filter((o) => o.orderId !== "");
         if (valid.length === 0) {
@@ -243,7 +336,7 @@ async function parseExcelFile(file: File): Promise<OrderStatus[]> {
             ),
           );
         } else {
-          resolve(valid);
+          resolve({ orders: valid, presentColumns });
         }
       } catch (err) {
         reject(err);
@@ -289,47 +382,55 @@ function mapRowsToOrders(rows: Record<string, unknown>[]): OrderStatus[] {
         "Status4",
         "status4",
         "STATUS4",
-        "Installation",
-        "installation",
-        "INSTALLATION",
+        "Material Dispatched",
+        "material dispatched",
+        "MATERIAL DISPATCHED",
       ),
       status5: get(
         "Status5",
         "status5",
         "STATUS5",
+        "Installation",
+        "installation",
+        "INSTALLATION",
+      ),
+      status6: get(
+        "Status6",
+        "status6",
+        "STATUS6",
         "File Submission",
         "file submission",
         "FILE SUBMISSION",
       ),
-      status6: get("Status6", "status6", "STATUS6", "Meter", "meter", "METER"),
-      status7: get(
-        "Status7",
-        "status7",
-        "STATUS7",
-        "Internet",
-        "internet",
-        "INTERNET",
-      ),
+      status7: get("Status7", "status7", "STATUS7", "Meter", "meter", "METER"),
       status8: get(
         "Status8",
         "status8",
         "STATUS8",
-        "Subsidy",
-        "subsidy",
-        "SUBSIDY",
+        "Internet",
+        "internet",
+        "INTERNET",
       ),
       status9: get(
         "Status9",
         "status9",
         "STATUS9",
-        "Warranty File",
-        "warranty file",
-        "WARRANTY FILE",
+        "Subsidy",
+        "subsidy",
+        "SUBSIDY",
       ),
       status10: get(
         "Status10",
         "status10",
         "STATUS10",
+        "Warranty File",
+        "warranty file",
+        "WARRANTY FILE",
+      ),
+      status11: get(
+        "Status11",
+        "status11",
+        "STATUS11",
         "Any Pendency",
         "any pendency",
         "ANY PENDENCY",
@@ -344,6 +445,7 @@ function AllOrdersTable() {
   const { data: orders, isFetching, isError } = useGetAllOrders();
   const deleteOrder = useDeleteOrder();
   const [expanded, setExpanded] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDelete = async (orderId: string) => {
     try {
@@ -351,6 +453,51 @@ function AllOrdersTable() {
       toast.success(`Order ${orderId} deleted`);
     } catch {
       toast.error("Failed to delete order");
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    if (!orders || orders.length === 0) return;
+    setIsDownloading(true);
+    try {
+      const XLSX = await getXLSX();
+      const headers = [
+        "OrderID",
+        "Name",
+        "Date of Order ID",
+        "Payment",
+        "Material Dispatched",
+        "Installation",
+        "File Submission",
+        "Meter",
+        "Internet",
+        "Subsidy",
+        "Warranty File",
+        "Any Pendency",
+      ];
+      const dataRows = orders.map((order) => [
+        order.orderId,
+        order.status1,
+        order.status2,
+        order.status3,
+        order.status4,
+        order.status5,
+        order.status6,
+        order.status7,
+        order.status8,
+        order.status9,
+        order.status10,
+        order.status11,
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Orders");
+      XLSX.writeFile(wb, "all_orders.xlsx");
+      toast.success(`Exported ${orders.length} orders to all_orders.xlsx`);
+    } catch {
+      toast.error("Failed to export data. Please try again.");
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -369,18 +516,37 @@ function AllOrdersTable() {
               </Badge>
             )}
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setExpanded((v) => !v)}
-            className="h-8 w-8 p-0"
-          >
-            {expanded ? (
-              <ChevronUp className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
+          <div className="flex items-center gap-2">
+            {orders && orders.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleDownloadAll()}
+                disabled={isDownloading}
+                data-ocid="admin.download_all_button"
+                className="gap-1.5 text-xs font-medium h-8"
+              >
+                {isDownloading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                {isDownloading ? "Exporting…" : "Download All"}
+              </Button>
             )}
-          </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded((v) => !v)}
+              className="h-8 w-8 p-0"
+            >
+              {expanded ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
@@ -492,11 +658,12 @@ function AllOrdersTable() {
 
 function UploadInterface() {
   const [isDragging, setIsDragging] = useState(false);
-  const [parsedOrders, setParsedOrders] = useState<OrderStatus[] | null>(null);
+  const [parsedResult, setParsedResult] = useState<ParseResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bulkUpsert = useBulkUpsertOrders();
+  const { data: allOrders } = useGetAllOrders();
 
   const processFile = useCallback(async (file: File) => {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -504,11 +671,11 @@ function UploadInterface() {
       return;
     }
     setParseError(null);
-    setParsedOrders(null);
+    setParsedResult(null);
     setFileName(file.name);
     try {
-      const orders = await parseExcelFile(file);
-      setParsedOrders(orders);
+      const result = await parseExcelFile(file);
+      setParsedResult(result);
     } catch (err) {
       setParseError(
         err instanceof Error ? err.message : "Failed to parse file",
@@ -536,7 +703,9 @@ function UploadInterface() {
   );
 
   const handleSubmit = async () => {
-    if (!parsedOrders) return;
+    if (!parsedResult) return;
+    const { orders: parsedOrders, presentColumns } = parsedResult;
+
     // Deduplicate: last row per orderId wins
     const deduped = Object.values(
       parsedOrders.reduce<Record<string, OrderStatus>>((acc, order) => {
@@ -544,18 +713,66 @@ function UploadInterface() {
         return acc;
       }, {}),
     );
+
+    // Build lookup map from existing backend data
+    const existingMap: Record<string, OrderStatus> = {};
+    for (const o of allOrders ?? []) {
+      existingMap[o.orderId] = o;
+    }
+
+    // Merge: for each order, preserve existing values for columns that were
+    // not present in the upload OR were present but blank.
+    const merged = deduped.map((uploadedOrder) => {
+      const existing = existingMap[uploadedOrder.orderId];
+      if (!existing) {
+        // New order — treat missing/blank as empty string (already "")
+        return uploadedOrder;
+      }
+      // Build a partial record then spread into a full OrderStatus
+      const statusFields: Record<string, string> = {};
+      for (const key of STATUS_KEYS) {
+        const uploadedValue = uploadedOrder[key] as string;
+        const existingValue = existing[key] as string;
+        if (!presentColumns.has(key)) {
+          // Column not in uploaded file → keep existing
+          statusFields[key] = existingValue ?? "";
+        } else if (!uploadedValue) {
+          // Column present but blank → keep existing
+          statusFields[key] = existingValue ?? "";
+        } else {
+          // Column present and non-blank → use uploaded value
+          statusFields[key] = uploadedValue;
+        }
+      }
+      return {
+        orderId: uploadedOrder.orderId,
+        status1: statusFields.status1 ?? "",
+        status2: statusFields.status2 ?? "",
+        status3: statusFields.status3 ?? "",
+        status4: statusFields.status4 ?? "",
+        status5: statusFields.status5 ?? "",
+        status6: statusFields.status6 ?? "",
+        status7: statusFields.status7 ?? "",
+        status8: statusFields.status8 ?? "",
+        status9: statusFields.status9 ?? "",
+        status10: statusFields.status10 ?? "",
+        status11: statusFields.status11 ?? "",
+      } satisfies OrderStatus;
+    });
+
     try {
-      await bulkUpsert.mutateAsync(deduped);
-      toast.success(`${deduped.length} orders uploaded successfully!`);
-      setParsedOrders(null);
+      await bulkUpsert.mutateAsync(merged);
+      toast.success(`${merged.length} orders uploaded successfully!`);
+      setParsedResult(null);
       setFileName(null);
     } catch {
       toast.error("Upload failed. Please try again.");
     }
   };
 
-  const previewOrders = parsedOrders?.slice(0, PREVIEW_LIMIT) ?? [];
-  const hasMore = (parsedOrders?.length ?? 0) > PREVIEW_LIMIT;
+  const parsedOrders = parsedResult?.orders ?? [];
+  const previewOrders = parsedOrders.slice(0, PREVIEW_LIMIT);
+  const hasMore = parsedOrders.length > PREVIEW_LIMIT;
 
   const handleDownloadTemplate = () => {
     const headers = [
@@ -563,6 +780,7 @@ function UploadInterface() {
       "Name",
       "Date of Order ID",
       "Payment",
+      "Material Dispatched",
       "Installation",
       "File Submission",
       "Meter",
@@ -576,6 +794,7 @@ function UploadInterface() {
       "John Doe",
       "2024-01-15",
       "Completed",
+      "Dispatched",
       "Scheduled",
       "Submitted",
       "Installed",
@@ -604,10 +823,17 @@ function UploadInterface() {
           <p className="text-xs text-accent-foreground font-medium">
             <span className="font-semibold">Expected columns:</span>{" "}
             <code className="font-mono bg-accent/20 px-1 rounded text-xs">
-              OrderID | Name | Date of Order ID | Payment | Installation | File
-              Submission | Meter | Internet | Subsidy | Warranty File | Any
-              Pendency
+              OrderID | Name | Date of Order ID | Payment | Material Dispatched
+              | Installation | File Submission | Meter | Internet | Subsidy |
+              Warranty File | Any Pendency
             </code>
+            <br />
+            <span className="text-accent-foreground/80 mt-1 inline-block">
+              Partial uploads supported — include only{" "}
+              <span className="font-mono font-semibold">OrderID</span> + the
+              columns you want to update. Blank cells and missing columns will
+              not overwrite existing values.
+            </span>
           </p>
         </CardContent>
       </Card>
@@ -674,7 +900,7 @@ function UploadInterface() {
           </p>
         </div>
 
-        {fileName && !parsedOrders && !parseError && (
+        {fileName && !parsedResult && !parseError && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted px-3 py-1.5 rounded-lg">
             <Loader2 className="w-4 h-4 animate-spin text-primary" />
             Parsing {fileName}…
@@ -699,7 +925,7 @@ function UploadInterface() {
       )}
 
       {/* Preview table */}
-      {parsedOrders && parsedOrders.length > 0 && (
+      {parsedOrders.length > 0 && (
         <Card className="shadow-sm border-border animate-slide-up">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -805,7 +1031,7 @@ function UploadInterface() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setParsedOrders(null);
+                    setParsedResult(null);
                     setFileName(null);
                   }}
                   disabled={bulkUpsert.isPending}
@@ -1177,6 +1403,16 @@ function UserManagement() {
   );
 }
 
+// ─── BO Panel helpers ─────────────────────────────────────────────────────────
+
+const getTodayDate = () => {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+};
+
 // ─── BO Panel (restricted update-only user) ───────────────────────────────────
 
 interface BOPanelProps {
@@ -1188,6 +1424,10 @@ function BOPanel({ onLogout }: BOPanelProps) {
   const [searchedId, setSearchedId] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Record<string, string>>(() =>
     Object.fromEntries(STATUS_KEYS.map((k) => [k, ""])),
+  );
+  // Track which checkboxes are checked (true = date set via checkbox)
+  const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(STATUS_KEYS.map((k) => [k, false])),
   );
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -1204,6 +1444,10 @@ function BOPanel({ onLogout }: BOPanelProps) {
         STATUS_KEYS.map((k) => [k, (order[k] as string) ?? ""]),
       );
       setStatuses(filled);
+      // Pre-check checkboxes for fields that already have a value
+      setCheckedKeys(
+        Object.fromEntries(STATUS_KEYS.map((k) => [k, !!filled[k]])),
+      );
       setSaveSuccess(false);
       setSaveError(false);
     }
@@ -1218,6 +1462,10 @@ function BOPanel({ onLogout }: BOPanelProps) {
         STATUS_KEYS.map((k) => [k, (order[k] as string) ?? ""]),
       );
       setStatuses(filled);
+      // Pre-check checkboxes for fields that already have a value
+      setCheckedKeys(
+        Object.fromEntries(STATUS_KEYS.map((k) => [k, !!filled[k]])),
+      );
       setSaveSuccess(false);
       setSaveError(false);
     }
@@ -1233,6 +1481,20 @@ function BOPanel({ onLogout }: BOPanelProps) {
 
   const handleStatusChange = (key: string, value: string) => {
     setStatuses((prev) => ({ ...prev, [key]: value }));
+    setSaveSuccess(false);
+    setSaveError(false);
+  };
+
+  const handleCheckboxChange = (key: string, checked: boolean) => {
+    if (checked) {
+      // Set today's date as the value and disable the input
+      setStatuses((prev) => ({ ...prev, [key]: getTodayDate() }));
+      setCheckedKeys((prev) => ({ ...prev, [key]: true }));
+    } else {
+      // Clear the value and re-enable manual input
+      setStatuses((prev) => ({ ...prev, [key]: "" }));
+      setCheckedKeys((prev) => ({ ...prev, [key]: false }));
+    }
     setSaveSuccess(false);
     setSaveError(false);
   };
@@ -1390,30 +1652,55 @@ function BOPanel({ onLogout }: BOPanelProps) {
               </CardTitle>
             </div>
             <CardDescription className="text-xs">
-              Update the fields below and click Save Changes.
+              Check the checkbox to record today&apos;s date for a status, or
+              type a value manually. Click Save Changes when done.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Status fields grid */}
+            {/* Status fields grid with checkboxes */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {STATUS_KEYS.map((key, i) => (
-                <div key={key} className="space-y-1.5">
+                <div
+                  key={key}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5 hover:bg-muted/50 transition-colors"
+                >
+                  <Checkbox
+                    id={`bo-checkbox-${key}`}
+                    checked={checkedKeys[key] ?? false}
+                    onCheckedChange={(checked) =>
+                      handleCheckboxChange(key, !!checked)
+                    }
+                    data-ocid={`bo.checkbox.${i + 1}`}
+                    className="shrink-0"
+                  />
                   <Label
-                    htmlFor={`bo-${key}`}
-                    className="text-sm font-medium text-muted-foreground"
+                    htmlFor={`bo-checkbox-${key}`}
+                    className="text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer min-w-[90px] shrink-0"
                   >
                     {STATUS_LABELS[i]}
                   </Label>
                   <Input
                     id={`bo-${key}`}
-                    placeholder={`Enter ${STATUS_LABELS[i]}`}
+                    placeholder={
+                      checkedKeys[key] ? "" : `Enter ${STATUS_LABELS[i]}`
+                    }
                     value={statuses[key]}
                     onChange={(e) => handleStatusChange(key, e.target.value)}
+                    disabled={checkedKeys[key]}
                     data-ocid={`bo.${key}_input`}
+                    className="flex-1 h-8 text-sm disabled:opacity-70 disabled:cursor-not-allowed"
                   />
                 </div>
               ))}
             </div>
+
+            {/* Legend */}
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium">Tip:</span> Checking a box
+              automatically sets today&apos;s date (
+              <span className="font-mono">{getTodayDate()}</span>) for that
+              status. Uncheck to clear and type manually.
+            </p>
 
             {/* Feedback */}
             {saveSuccess && (

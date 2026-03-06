@@ -21,6 +21,7 @@ export interface OrderStatus {
   'status8' : string,
   'status9' : string,
   'status10' : string,
+  'status11' : string,
   'orderId' : string,
 }
 export interface UserProfile { 'name' : string }

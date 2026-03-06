@@ -7,19 +7,13 @@ import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
 actor {
-  // Initialize the access control state
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
-  // User profile type
   public type UserProfile = {
     name : Text;
   };
 
-  // User profiles storage
-  let userProfiles = Map.empty<Principal, UserProfile>();
-
-  // Order type
   public type OrderStatus = {
     orderId : Text;
     status1 : Text;
@@ -32,12 +26,13 @@ actor {
     status8 : Text;
     status9 : Text;
     status10 : Text;
+    status11 : Text;
   };
 
-  // Orders storage
   let orders = Map.empty<Text, OrderStatus>();
+  let userProfiles = Map.empty<Principal, UserProfile>();
 
-  // User profile management functions
+  // User profile functions with auth checks
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can access profiles");
@@ -59,29 +54,26 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  // Order management functions WITHOUT access control checks
-  public shared ({}) func upsertOrder(order : OrderStatus) : async () {
+  // Order management functions (NO auth checks)
+  public shared ({ caller }) func upsertOrder(order : OrderStatus) : async () {
     orders.add(order.orderId, order);
   };
 
-  public shared ({}) func bulkUpsertOrders(ordersArray : [OrderStatus]) : async () {
+  public shared ({ caller }) func bulkUpsertOrders(ordersArray : [OrderStatus]) : async () {
     for (order in ordersArray.values()) {
       orders.add(order.orderId, order);
     };
   };
 
-  public shared ({}) func deleteOrder(orderId : Text) : async () {
-    if (not orders.containsKey(orderId)) {
-      Runtime.trap("Order does not exist");
-    };
+  public shared ({ caller }) func deleteOrder(orderId : Text) : async () {
     orders.remove(orderId);
   };
 
-  public query ({}) func getOrder(orderId : Text) : async ?OrderStatus {
-    orders.get(orderId);
+  public query ({ caller }) func getOrder(_orderId : Text) : async ?OrderStatus {
+    orders.get(_orderId);
   };
 
-  public query ({}) func getAllOrders() : async [OrderStatus] {
+  public query ({ caller }) func getAllOrders() : async [OrderStatus] {
     orders.values().toArray();
   };
 };

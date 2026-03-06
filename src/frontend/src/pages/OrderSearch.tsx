@@ -14,13 +14,14 @@ const STATUS_LABELS: {
   { key: "status1", label: "Name" },
   { key: "status2", label: "Date of Order ID" },
   { key: "status3", label: "Payment" },
-  { key: "status4", label: "Installation" },
-  { key: "status5", label: "File Submission" },
-  { key: "status6", label: "Meter" },
-  { key: "status7", label: "Internet" },
-  { key: "status8", label: "Subsidy" },
-  { key: "status9", label: "Warranty File" },
-  { key: "status10", label: "Any Pendency" },
+  { key: "status4", label: "Material Dispatched" },
+  { key: "status5", label: "Installation" },
+  { key: "status6", label: "File Submission" },
+  { key: "status7", label: "Meter" },
+  { key: "status8", label: "Internet" },
+  { key: "status9", label: "Subsidy" },
+  { key: "status10", label: "Warranty File" },
+  { key: "status11", label: "Any Pendency" },
 ];
 
 function StatusBadge({ value }: { value: string }) {
@@ -61,7 +62,7 @@ function OrderCard({
               variant="secondary"
               className="bg-primary/10 text-primary border-primary/20 text-xs font-semibold px-3 py-1"
             >
-              10 Status Fields
+              11 Status Fields
             </Badge>
           </div>
         </CardHeader>
@@ -98,11 +99,21 @@ function LoadingSkeleton() {
         </CardHeader>
         <CardContent className="pt-5 pb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10"].map(
-              (k) => (
-                <Skeleton key={k} className="h-12 rounded-lg" />
-              ),
-            )}
+            {[
+              "s1",
+              "s2",
+              "s3",
+              "s4",
+              "s5",
+              "s6",
+              "s7",
+              "s8",
+              "s9",
+              "s10",
+              "s11",
+            ].map((k) => (
+              <Skeleton key={k} className="h-12 rounded-lg" />
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -143,7 +154,7 @@ export function OrderSearch() {
           Track Your Order
         </h1>
         <p className="text-muted-foreground text-lg">
-          Enter your order ID to view all 10 status checkpoints
+          Enter your order ID to view all 11 status checkpoints
         </p>
       </div>
 
