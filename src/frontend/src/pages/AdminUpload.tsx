@@ -114,6 +114,16 @@ const STATUS_KEYS = [
   "status9",
   "status10",
   "status11",
+  "status12",
+  "status13",
+  "status14",
+  "status15",
+  "status16",
+  "status17",
+  "status18",
+  "status19",
+  "status20",
+  "status21",
 ] as const;
 
 // ─── XLSX CDN loader ──────────────────────────────────────────────────────────
@@ -423,6 +433,16 @@ function mapRowsToOrders(rows: Record<string, unknown>[]): OrderStatus[] {
         "any pendency",
         "ANY PENDENCY",
       ),
+      status12: get("Status12", "status12", "STATUS12"),
+      status13: get("Status13", "status13", "STATUS13"),
+      status14: get("Status14", "status14", "STATUS14"),
+      status15: get("Status15", "status15", "STATUS15"),
+      status16: get("Status16", "status16", "STATUS16"),
+      status17: get("Status17", "status17", "STATUS17"),
+      status18: get("Status18", "status18", "STATUS18"),
+      status19: get("Status19", "status19", "STATUS19"),
+      status20: get("Status20", "status20", "STATUS20"),
+      status21: get("Status21", "status21", "STATUS21"),
     };
   });
 }
@@ -719,6 +739,16 @@ function UploadInterface() {
         status9: statusFields.status9 ?? "",
         status10: statusFields.status10 ?? "",
         status11: statusFields.status11 ?? "",
+        status12: statusFields.status12 ?? "",
+        status13: statusFields.status13 ?? "",
+        status14: statusFields.status14 ?? "",
+        status15: statusFields.status15 ?? "",
+        status16: statusFields.status16 ?? "",
+        status17: statusFields.status17 ?? "",
+        status18: statusFields.status18 ?? "",
+        status19: statusFields.status19 ?? "",
+        status20: statusFields.status20 ?? "",
+        status21: statusFields.status21 ?? "",
       } satisfies OrderStatus;
     });
 
@@ -1206,15 +1236,15 @@ function StatusFieldsManager() {
   };
 
   const handleAddField = () => {
-    if (activeConfigs.length >= 11) {
-      toast.error("All 11 status fields are already active");
+    if (activeConfigs.length >= 21) {
+      toast.error("All 21 status fields are already active");
       return;
     }
     // Find first STATUS_KEY not already active in configs
     const activeKeys = new Set(activeConfigs.map((c) => c.key));
     const nextKey = STATUS_KEYS.find((k) => !activeKeys.has(k));
     if (!nextKey) {
-      toast.error("All 11 status fields are already active");
+      toast.error("All 21 status fields are already active");
       return;
     }
     const maxSeq = Math.max(0, ...activeConfigs.map((c) => c.sequence));
@@ -1279,7 +1309,7 @@ function StatusFieldsManager() {
               variant="outline"
               size="sm"
               onClick={handleAddField}
-              disabled={activeConfigs.length >= 11}
+              disabled={activeConfigs.length >= 21}
               data-ocid="admin.add_status_field_button"
               className="gap-1.5 text-xs font-medium h-8 shrink-0"
             >

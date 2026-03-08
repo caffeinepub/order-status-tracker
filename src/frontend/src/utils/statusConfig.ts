@@ -1,7 +1,7 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type StatusFieldConfig = {
-  key: string; // "status1".."status11" (maps to backend field)
+  key: string; // "status1".."status21" (maps to backend field)
   label: string; // display name
   sequence: number; // 1-based ordering
   loginRequired: boolean; // if true, hide value in public search unless logged in
@@ -99,6 +99,76 @@ export const DEFAULT_STATUS_CONFIGS: StatusFieldConfig[] = [
     loginRequired: false,
     isActive: true,
   },
+  {
+    key: "status12",
+    label: "Status 12",
+    sequence: 12,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status13",
+    label: "Status 13",
+    sequence: 13,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status14",
+    label: "Status 14",
+    sequence: 14,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status15",
+    label: "Status 15",
+    sequence: 15,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status16",
+    label: "Status 16",
+    sequence: 16,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status17",
+    label: "Status 17",
+    sequence: 17,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status18",
+    label: "Status 18",
+    sequence: 18,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status19",
+    label: "Status 19",
+    sequence: 19,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status20",
+    label: "Status 20",
+    sequence: 20,
+    loginRequired: false,
+    isActive: false,
+  },
+  {
+    key: "status21",
+    label: "Status 21",
+    sequence: 21,
+    loginRequired: false,
+    isActive: false,
+  },
 ];
 
 const DEFAULT_LOCAL_USERS: LocalUser[] = [
@@ -121,7 +191,12 @@ export function getStatusFieldConfigs(): StatusFieldConfig[] {
     const parsed = JSON.parse(raw) as StatusFieldConfig[];
     if (!Array.isArray(parsed) || parsed.length === 0)
       return DEFAULT_STATUS_CONFIGS;
-    return parsed;
+    // Merge in any new default keys missing from stored config (e.g. after adding more status fields)
+    const storedKeys = new Set(parsed.map((c) => c.key));
+    const missingDefaults = DEFAULT_STATUS_CONFIGS.filter(
+      (c) => !storedKeys.has(c.key),
+    );
+    return [...parsed, ...missingDefaults];
   } catch {
     return DEFAULT_STATUS_CONFIGS;
   }

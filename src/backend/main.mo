@@ -5,7 +5,9 @@ import Text "mo:core/Text";
 import Principal "mo:core/Principal";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
+import Migration "migration";
 
+(with migration = Migration.run)
 actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
@@ -27,6 +29,16 @@ actor {
     status9 : Text;
     status10 : Text;
     status11 : Text;
+    status12 : Text;
+    status13 : Text;
+    status14 : Text;
+    status15 : Text;
+    status16 : Text;
+    status17 : Text;
+    status18 : Text;
+    status19 : Text;
+    status20 : Text;
+    status21 : Text;
   };
 
   let orders = Map.empty<Text, OrderStatus>();

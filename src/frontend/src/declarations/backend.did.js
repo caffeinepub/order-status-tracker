@@ -25,6 +25,16 @@ export const OrderStatus = IDL.Record({
   'status9' : IDL.Text,
   'status10' : IDL.Text,
   'status11' : IDL.Text,
+  'status12' : IDL.Text,
+  'status13' : IDL.Text,
+  'status14' : IDL.Text,
+  'status15' : IDL.Text,
+  'status16' : IDL.Text,
+  'status17' : IDL.Text,
+  'status18' : IDL.Text,
+  'status19' : IDL.Text,
+  'status20' : IDL.Text,
+  'status21' : IDL.Text,
   'orderId' : IDL.Text,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
@@ -68,6 +78,16 @@ export const idlFactory = ({ IDL }) => {
     'status9' : IDL.Text,
     'status10' : IDL.Text,
     'status11' : IDL.Text,
+    'status12' : IDL.Text,
+    'status13' : IDL.Text,
+    'status14' : IDL.Text,
+    'status15' : IDL.Text,
+    'status16' : IDL.Text,
+    'status17' : IDL.Text,
+    'status18' : IDL.Text,
+    'status19' : IDL.Text,
+    'status20' : IDL.Text,
+    'status21' : IDL.Text,
     'orderId' : IDL.Text,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
