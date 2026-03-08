@@ -44,12 +44,14 @@ export interface _SERVICE {
   'bulkUpsertOrders' : ActorMethod<[Array<OrderStatus>], undefined>,
   'deleteOrder' : ActorMethod<[string], undefined>,
   'getAllOrders' : ActorMethod<[], Array<OrderStatus>>,
+  'getAppConfig' : ActorMethod<[string], [] | [string]>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getOrder' : ActorMethod<[string], [] | [OrderStatus]>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'setAppConfig' : ActorMethod<[string, string], undefined>,
   'upsertOrder' : ActorMethod<[OrderStatus], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;

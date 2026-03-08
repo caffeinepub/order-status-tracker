@@ -13,11 +13,9 @@ import {
 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { OrderStatus } from "../backend.d";
+import { useAppConfig } from "../hooks/useAppConfig";
 import { useGetOrder } from "../hooks/useQueries";
-import {
-  type StatusFieldConfig,
-  getActiveStatusConfigs,
-} from "../utils/statusConfig";
+import type { StatusFieldConfig } from "../utils/statusConfig";
 
 function StatusBadge({ value }: { value: string }) {
   const isEmpty = !value || value.trim() === "" || value.trim() === "-";
@@ -181,7 +179,7 @@ export function OrderSearch({ onNavigateToAdmin }: OrderSearchProps) {
     };
   }, []);
 
-  const activeConfigs = getActiveStatusConfigs();
+  const { activeStatusConfigs: activeConfigs } = useAppConfig();
 
   const {
     data: order,

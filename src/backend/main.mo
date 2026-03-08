@@ -43,6 +43,7 @@ actor {
 
   let orders = Map.empty<Text, OrderStatus>();
   let userProfiles = Map.empty<Principal, UserProfile>();
+  let appConfigs = Map.empty<Text, Text>();
 
   // User profile functions with auth checks
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
@@ -66,7 +67,7 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  // Order management functions (NO auth checks)
+  // Order management functions (NO auth checks - anyone can access)
   public shared ({ caller }) func upsertOrder(order : OrderStatus) : async () {
     orders.add(order.orderId, order);
   };
@@ -87,5 +88,18 @@ actor {
 
   public query ({ caller }) func getAllOrders() : async [OrderStatus] {
     orders.values().toArray();
+  };
+
+  // App config functions - setAppConfig requires user permission to prevent anonymous tampering
+  // getAppConfig allows anyone to read (including guests)
+  public shared ({ caller }) func setAppConfig(key : Text, value : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can modify app configuration");
+    };
+    appConfigs.add(key, value);
+  };
+
+  public query ({ caller }) func getAppConfig(key : Text) : async ?Text {
+    appConfigs.get(key);
   };
 };

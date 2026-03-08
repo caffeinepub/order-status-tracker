@@ -45,6 +45,7 @@ export const idlService = IDL.Service({
   'bulkUpsertOrders' : IDL.Func([IDL.Vec(OrderStatus)], [], []),
   'deleteOrder' : IDL.Func([IDL.Text], [], []),
   'getAllOrders' : IDL.Func([], [IDL.Vec(OrderStatus)], ['query']),
+  'getAppConfig' : IDL.Func([IDL.Text], [IDL.Opt(IDL.Text)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getOrder' : IDL.Func([IDL.Text], [IDL.Opt(OrderStatus)], ['query']),
@@ -55,6 +56,7 @@ export const idlService = IDL.Service({
     ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'setAppConfig' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'upsertOrder' : IDL.Func([OrderStatus], [], []),
 });
 
@@ -98,6 +100,7 @@ export const idlFactory = ({ IDL }) => {
     'bulkUpsertOrders' : IDL.Func([IDL.Vec(OrderStatus)], [], []),
     'deleteOrder' : IDL.Func([IDL.Text], [], []),
     'getAllOrders' : IDL.Func([], [IDL.Vec(OrderStatus)], ['query']),
+    'getAppConfig' : IDL.Func([IDL.Text], [IDL.Opt(IDL.Text)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getOrder' : IDL.Func([IDL.Text], [IDL.Opt(OrderStatus)], ['query']),
@@ -108,6 +111,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'setAppConfig' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'upsertOrder' : IDL.Func([OrderStatus], [], []),
   });
 };

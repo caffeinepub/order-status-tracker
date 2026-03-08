@@ -110,3 +110,32 @@ export function useUpsertOrder() {
     },
   });
 }
+
+export function useGetAppConfig(key: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<string | null>({
+    queryKey: ["appConfig", key],
+    queryFn: async () => {
+      if (!actor) return null;
+      return actor.getAppConfig(key);
+    },
+    enabled: !!actor && !isFetching,
+    staleTime: Number.POSITIVE_INFINITY, // Config is only updated via setAppConfig mutations
+  });
+}
+
+export function useSetAppConfig() {
+  const { actor } = useActor();
+  const actorRef = useRef(actor);
+  actorRef.current = actor;
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: string }) => {
+      const resolvedActor = await waitForActorRef(actorRef);
+      return resolvedActor.setAppConfig(key, value);
+    },
+    onSuccess: (_data, { key }) => {
+      void queryClient.invalidateQueries({ queryKey: ["appConfig", key] });
+    },
+  });
+}

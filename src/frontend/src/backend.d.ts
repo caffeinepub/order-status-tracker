@@ -44,11 +44,13 @@ export interface backendInterface {
     bulkUpsertOrders(ordersArray: Array<OrderStatus>): Promise<void>;
     deleteOrder(orderId: string): Promise<void>;
     getAllOrders(): Promise<Array<OrderStatus>>;
+    getAppConfig(key: string): Promise<string | null>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getOrder(_orderId: string): Promise<OrderStatus | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    setAppConfig(key: string, value: string): Promise<void>;
     upsertOrder(order: OrderStatus): Promise<void>;
 }

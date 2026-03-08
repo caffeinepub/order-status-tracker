@@ -73,6 +73,7 @@ import { toast } from "sonner";
 import type { OrderStatus } from "../backend.d";
 import { UserRole } from "../backend.d";
 import { useActor } from "../hooks/useActor";
+import { useAppConfig } from "../hooks/useAppConfig";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useBulkUpsertOrders,
@@ -82,19 +83,10 @@ import {
   useIsAdmin,
   useUpsertOrder,
 } from "../hooks/useQueries";
-import {
-  DEFAULT_STATUS_CONFIGS,
-  type LocalUser,
-  type StatusFieldConfig,
-  getActiveStatusConfigs,
-  getLocalUsers,
-  getStatusFieldConfigs,
-  getUserFieldPermissions,
-  getUserPermission,
-  saveLocalUsers,
-  saveStatusFieldConfigs,
-  saveUserFieldPermissions,
-  validateLogin,
+import type {
+  LocalUser,
+  StatusFieldConfig,
+  UserFieldPermission,
 } from "../utils/statusConfig";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -187,8 +179,9 @@ async function getXLSX(): Promise<XLSXLib> {
 
 // ─── Excel parser ─────────────────────────────────────────────────────────────
 
-function buildColumnAliases(): Record<string, (typeof STATUS_KEYS)[number]> {
-  const configs = getStatusFieldConfigs();
+function buildColumnAliases(
+  configs: StatusFieldConfig[],
+): Record<string, (typeof STATUS_KEYS)[number]> {
   const aliases: Record<string, (typeof STATUS_KEYS)[number]> = {};
   for (const config of configs) {
     const key = config.key as (typeof STATUS_KEYS)[number];
@@ -242,9 +235,10 @@ function buildColumnAliases(): Record<string, (typeof STATUS_KEYS)[number]> {
 
 function detectPresentColumns(
   rawHeaders: string[],
+  configs: StatusFieldConfig[],
 ): Set<(typeof STATUS_KEYS)[number]> {
   const present = new Set<(typeof STATUS_KEYS)[number]>();
-  const aliases = buildColumnAliases();
+  const aliases = buildColumnAliases(configs);
   for (const header of rawHeaders) {
     const key = aliases[header.trim()];
     if (key) present.add(key);
@@ -257,7 +251,10 @@ type ParseResult = {
   presentColumns: Set<(typeof STATUS_KEYS)[number]>;
 };
 
-async function parseExcelFile(file: File): Promise<ParseResult> {
+async function parseExcelFile(
+  file: File,
+  configs: StatusFieldConfig[],
+): Promise<ParseResult> {
   const isCsv = file.name.match(/\.csv$/i);
 
   if (isCsv) {
@@ -272,7 +269,7 @@ async function parseExcelFile(file: File): Promise<ParseResult> {
             return;
           }
           const headers = lines[0].split(",").map((h) => h.trim());
-          const presentColumns = detectPresentColumns(headers);
+          const presentColumns = detectPresentColumns(headers, configs);
           const rows = lines.slice(1).map((line) => {
             const vals = line
               .split(",")
@@ -325,7 +322,7 @@ async function parseExcelFile(file: File): Promise<ParseResult> {
           raw: false,
         });
         const rawHeaders = Object.keys(rows[0] ?? {});
-        const presentColumns = detectPresentColumns(rawHeaders);
+        const presentColumns = detectPresentColumns(rawHeaders, configs);
         const orders = mapRowsToOrders(rows as Record<string, unknown>[]);
         const valid = orders.filter((o) => o.orderId !== "");
         if (valid.length === 0) {
@@ -455,7 +452,7 @@ function AllOrdersTable() {
   const [expanded, setExpanded] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const activeConfigs = getActiveStatusConfigs();
+  const { activeStatusConfigs: activeConfigs } = useAppConfig();
 
   const handleDelete = async (orderId: string) => {
     try {
@@ -654,25 +651,28 @@ function UploadInterface() {
   const bulkUpsert = useBulkUpsertOrders();
   const { data: allOrders } = useGetAllOrders();
 
-  const activeConfigs = getActiveStatusConfigs();
+  const { statusConfigs, activeStatusConfigs: activeConfigs } = useAppConfig();
 
-  const processFile = useCallback(async (file: File) => {
-    if (!file.name.match(/\.(xlsx?|csv)$/i)) {
-      setParseError("Please upload a .xlsx, .xls, or .csv file");
-      return;
-    }
-    setParseError(null);
-    setParsedResult(null);
-    setFileName(file.name);
-    try {
-      const result = await parseExcelFile(file);
-      setParsedResult(result);
-    } catch (err) {
-      setParseError(
-        err instanceof Error ? err.message : "Failed to parse file",
-      );
-    }
-  }, []);
+  const processFile = useCallback(
+    async (file: File) => {
+      if (!file.name.match(/\.(xlsx?|csv)$/i)) {
+        setParseError("Please upload a .xlsx, .xls, or .csv file");
+        return;
+      }
+      setParseError(null);
+      setParsedResult(null);
+      setFileName(file.name);
+      try {
+        const result = await parseExcelFile(file, statusConfigs);
+        setParsedResult(result);
+      } catch (err) {
+        setParseError(
+          err instanceof Error ? err.message : "Failed to parse file",
+        );
+      }
+    },
+    [statusConfigs],
+  );
 
   const handleDrop = useCallback(
     (e: DragEvent<HTMLLabelElement>) => {
@@ -1036,7 +1036,7 @@ function ManualEntryForm() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
 
-  const activeConfigs = getActiveStatusConfigs();
+  const { activeStatusConfigs: activeConfigs } = useAppConfig();
 
   const handleStatusChange = (key: string, value: string) => {
     setStatuses((prev) => ({ ...prev, [key]: value }));
@@ -1177,10 +1177,17 @@ function ManualEntryForm() {
 // ─── Status Fields Management Tab ─────────────────────────────────────────────
 
 function StatusFieldsManager() {
-  const [configs, setConfigs] = useState<StatusFieldConfig[]>(() =>
-    getStatusFieldConfigs(),
-  );
+  const { statusConfigs: backendConfigs, saveStatusConfigs } = useAppConfig();
+  const [configs, setConfigs] = useState<StatusFieldConfig[]>(backendConfigs);
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Keep local state in sync when backend data changes
+  const prevBackendConfigsRef = useRef(backendConfigs);
+  if (prevBackendConfigsRef.current !== backendConfigs) {
+    prevBackendConfigsRef.current = backendConfigs;
+    setConfigs(backendConfigs);
+  }
 
   const activeConfigs = configs
     .filter((c) => c.isActive)
@@ -1229,10 +1236,17 @@ function StatusFieldsManager() {
     updateConfig(key, { isActive: true, label, sequence: maxSeq + 1 });
   };
 
-  const handleSave = () => {
-    saveStatusFieldConfigs(configs);
-    setSaved(true);
-    toast.success("Status field configuration saved!");
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await saveStatusConfigs(configs);
+      setSaved(true);
+      toast.success("Status field configuration saved!");
+    } catch {
+      toast.error("Failed to save configuration. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAddField = () => {
@@ -1461,12 +1475,22 @@ function StatusFieldsManager() {
       {/* Save button */}
       <div className="flex items-center gap-3">
         <Button
-          onClick={handleSave}
+          onClick={() => void handleSave()}
+          disabled={isSaving}
           data-ocid="admin.status_fields_save_button"
           className="gap-2 font-semibold"
         >
-          <CheckCircle className="w-4 h-4" />
-          Save Configuration
+          {isSaving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving…
+            </>
+          ) : (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Save Configuration
+            </>
+          )}
         </Button>
         {saved && (
           <span
@@ -1532,16 +1556,21 @@ function InactiveFieldRow({
 
 function UserManagement() {
   const { actor } = useActor();
+  const {
+    localUsers,
+    userFieldPermissions,
+    activeStatusConfigs: activeConfigs,
+    saveLocalUsers,
+    saveUserFieldPermissions,
+    getUserPermission,
+  } = useAppConfig();
   const [principalInput, setPrincipalInput] = useState("");
   const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.user);
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignSuccess, setAssignSuccess] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  // Local users state
-  const [localUsers, setLocalUsers] = useState<LocalUser[]>(() =>
-    getLocalUsers(),
-  );
+  // New user form state
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<"admin" | "user">("user");
@@ -1550,12 +1579,6 @@ function UserManagement() {
   // Permissions dialog
   const [permDialogUser, setPermDialogUser] = useState<LocalUser | null>(null);
   const [tempPermissions, setTempPermissions] = useState<string[]>([]);
-
-  const activeConfigs = getActiveStatusConfigs();
-
-  const refreshUsers = () => {
-    setLocalUsers(getLocalUsers());
-  };
 
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1590,7 +1613,7 @@ function UserManagement() {
     }
   };
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     setAddUserError(null);
     if (!newUsername.trim()) {
       setAddUserError("Username is required");
@@ -1615,24 +1638,30 @@ function UserManagement() {
         role: newRole,
       },
     ];
-    saveLocalUsers(updated);
-    setLocalUsers(updated);
-    setNewUsername("");
-    setNewPassword("");
-    setNewRole("user");
-    toast.success(`User "${newUsername.trim()}" added`);
+    try {
+      await saveLocalUsers(updated);
+      setNewUsername("");
+      setNewPassword("");
+      setNewRole("user");
+      toast.success(`User "${newUsername.trim()}" added`);
+    } catch {
+      toast.error("Failed to save user. Please try again.");
+    }
   };
 
-  const handleDeleteUser = (username: string) => {
+  const handleDeleteUser = async (username: string) => {
     // Protect default admin
     if (username === ADMIN_USERNAME) {
       toast.error("Cannot delete the master admin account");
       return;
     }
     const updated = localUsers.filter((u) => u.username !== username);
-    saveLocalUsers(updated);
-    setLocalUsers(updated);
-    toast.success(`User "${username}" removed`);
+    try {
+      await saveLocalUsers(updated);
+      toast.success(`User "${username}" removed`);
+    } catch {
+      toast.error("Failed to delete user. Please try again.");
+    }
   };
 
   const openPermissions = (user: LocalUser) => {
@@ -1648,24 +1677,27 @@ function UserManagement() {
     );
   };
 
-  const savePermissions = () => {
+  const savePermissions = async () => {
     if (!permDialogUser) return;
-    const allPerms = getUserFieldPermissions();
+    const allPerms: UserFieldPermission[] = [...userFieldPermissions];
     const idx = allPerms.findIndex(
       (p) => p.username === permDialogUser.username,
     );
     if (idx >= 0) {
-      allPerms[idx].allowedFields = tempPermissions;
+      allPerms[idx] = { ...allPerms[idx], allowedFields: tempPermissions };
     } else {
       allPerms.push({
         username: permDialogUser.username,
         allowedFields: tempPermissions,
       });
     }
-    saveUserFieldPermissions(allPerms);
-    toast.success(`Permissions updated for "${permDialogUser.username}"`);
-    setPermDialogUser(null);
-    refreshUsers();
+    try {
+      await saveUserFieldPermissions(allPerms);
+      toast.success(`Permissions updated for "${permDialogUser.username}"`);
+      setPermDialogUser(null);
+    } catch {
+      toast.error("Failed to save permissions. Please try again.");
+    }
   };
 
   return (
@@ -1746,7 +1778,7 @@ function UserManagement() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteUser(user.username)}
+                            onClick={() => void handleDeleteUser(user.username)}
                             data-ocid={`admin.users_table.delete_button.${idx + 1}`}
                             className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                           >
@@ -1854,7 +1886,7 @@ function UserManagement() {
 
           <div className="mt-4">
             <Button
-              onClick={handleAddUser}
+              onClick={() => void handleAddUser()}
               data-ocid="admin.add_user_submit_button"
               className="gap-2 font-semibold"
             >
@@ -2058,7 +2090,7 @@ function UserManagement() {
               Cancel
             </Button>
             <Button
-              onClick={savePermissions}
+              onClick={() => void savePermissions()}
               data-ocid="admin.permissions_dialog.confirm_button"
               className="gap-2"
             >
@@ -2105,7 +2137,8 @@ function BOPanel({ onLogout, username }: BOPanelProps) {
   const upsertOrder = useUpsertOrder();
 
   // Resolve permissions for this user
-  const activeConfigs = getActiveStatusConfigs();
+  const { activeStatusConfigs: activeConfigs, getUserPermission } =
+    useAppConfig();
   const userAllowedFields = getUserPermission(username);
   // null = allow all; otherwise filter by allowedFields
   const isFieldEditable = (key: string) =>
@@ -2450,6 +2483,7 @@ function LoginForm({ onLogin }: LoginFormProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { validateLogin } = useAppConfig();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2716,6 +2750,7 @@ export function AdminUpload() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState<string>("");
   const { isInitializing } = useInternetIdentity();
+  const { localUsers } = useAppConfig();
 
   const handleLogin = (username: string) => {
     setIsLoggedIn(true);
@@ -2748,8 +2783,7 @@ export function AdminUpload() {
   }
 
   // Any non-admin user (role === "user") gets the restricted BOPanel
-  const users = getLocalUsers();
-  const currentUser = users.find((u) => u.username === loggedInUser);
+  const currentUser = localUsers.find((u) => u.username === loggedInUser);
   const isAdmin =
     loggedInUser === ADMIN_USERNAME || currentUser?.role === "admin";
 
