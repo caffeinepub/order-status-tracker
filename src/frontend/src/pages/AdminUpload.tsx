@@ -8,6 +8,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -31,6 +40,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Principal } from "@icp-sdk/core/principal";
 import {
   AlertCircle,
+  ArrowDown,
+  ArrowUp,
   CheckCircle,
   ChevronDown,
   ChevronUp,
@@ -40,12 +51,15 @@ import {
   KeyRound,
   Loader2,
   LogOut,
+  Plus,
   Search,
+  Settings,
   ShieldAlert,
   ShieldCheck,
   Trash2,
   Upload,
   UserCog,
+  UserPlus,
   Users,
 } from "lucide-react";
 import {
@@ -68,14 +82,25 @@ import {
   useIsAdmin,
   useUpsertOrder,
 } from "../hooks/useQueries";
+import {
+  DEFAULT_STATUS_CONFIGS,
+  type LocalUser,
+  type StatusFieldConfig,
+  getActiveStatusConfigs,
+  getLocalUsers,
+  getStatusFieldConfigs,
+  getUserFieldPermissions,
+  getUserPermission,
+  saveLocalUsers,
+  saveStatusFieldConfigs,
+  saveUserFieldPermissions,
+  validateLogin,
+} from "../utils/statusConfig";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PREVIEW_LIMIT = 10;
 const ADMIN_USERNAME = "arpit2127";
-const ADMIN_PASSWORD = "TyGoD@2127";
-const BO_USERNAME = "BO";
-const BO_PASSWORD = "SiYaRaM@802";
 
 const STATUS_KEYS = [
   "status1",
@@ -90,20 +115,6 @@ const STATUS_KEYS = [
   "status10",
   "status11",
 ] as const;
-
-const STATUS_LABELS = [
-  "Name",
-  "Date of Order ID",
-  "Payment",
-  "Material Dispatched",
-  "Installation",
-  "File Submission",
-  "Meter",
-  "Internet",
-  "Subsidy",
-  "Warranty File",
-  "Any Pendency",
-];
 
 // ─── XLSX CDN loader ──────────────────────────────────────────────────────────
 
@@ -143,7 +154,6 @@ async function getXLSX(): Promise<XLSXLib> {
   if (xlsxLib) return xlsxLib;
   return new Promise((resolve, reject) => {
     if (document.getElementById("xlsx-cdn")) {
-      // Already loading or loaded
       const check = setInterval(() => {
         if (xlsxLib) {
           clearInterval(check);
@@ -167,82 +177,66 @@ async function getXLSX(): Promise<XLSXLib> {
 
 // ─── Excel parser ─────────────────────────────────────────────────────────────
 
-// Maps raw column header strings to status keys (same aliases as mapRowsToOrders)
-const STATUS_COLUMN_ALIASES: Record<string, (typeof STATUS_KEYS)[number]> = {
-  status1: "status1",
-  Status1: "status1",
-  STATUS1: "status1",
-  Name: "status1",
-  name: "status1",
-  NAME: "status1",
-  status2: "status2",
-  Status2: "status2",
-  STATUS2: "status2",
-  "Date of Order ID": "status2",
-  "date of order id": "status2",
-  "DATE OF ORDER ID": "status2",
-  status3: "status3",
-  Status3: "status3",
-  STATUS3: "status3",
-  Payment: "status3",
-  payment: "status3",
-  PAYMENT: "status3",
-  status4: "status4",
-  Status4: "status4",
-  STATUS4: "status4",
-  "Material Dispatched": "status4",
-  "material dispatched": "status4",
-  "MATERIAL DISPATCHED": "status4",
-  status5: "status5",
-  Status5: "status5",
-  STATUS5: "status5",
-  Installation: "status5",
-  installation: "status5",
-  INSTALLATION: "status5",
-  status6: "status6",
-  Status6: "status6",
-  STATUS6: "status6",
-  "File Submission": "status6",
-  "file submission": "status6",
-  "FILE SUBMISSION": "status6",
-  status7: "status7",
-  Status7: "status7",
-  STATUS7: "status7",
-  Meter: "status7",
-  meter: "status7",
-  METER: "status7",
-  status8: "status8",
-  Status8: "status8",
-  STATUS8: "status8",
-  Internet: "status8",
-  internet: "status8",
-  INTERNET: "status8",
-  status9: "status9",
-  Status9: "status9",
-  STATUS9: "status9",
-  Subsidy: "status9",
-  subsidy: "status9",
-  SUBSIDY: "status9",
-  status10: "status10",
-  Status10: "status10",
-  STATUS10: "status10",
-  "Warranty File": "status10",
-  "warranty file": "status10",
-  "WARRANTY FILE": "status10",
-  status11: "status11",
-  Status11: "status11",
-  STATUS11: "status11",
-  "Any Pendency": "status11",
-  "any pendency": "status11",
-  "ANY PENDENCY": "status11",
-};
+function buildColumnAliases(): Record<string, (typeof STATUS_KEYS)[number]> {
+  const configs = getStatusFieldConfigs();
+  const aliases: Record<string, (typeof STATUS_KEYS)[number]> = {};
+  for (const config of configs) {
+    const key = config.key as (typeof STATUS_KEYS)[number];
+    // Always register by raw key (status1, Status1, STATUS1)
+    aliases[config.key] = key;
+    aliases[config.key.charAt(0).toUpperCase() + config.key.slice(1)] = key;
+    aliases[config.key.toUpperCase()] = key;
+    // Register by current label (case insensitive variants)
+    aliases[config.label] = key;
+    aliases[config.label.toLowerCase()] = key;
+    aliases[config.label.toUpperCase()] = key;
+  }
+  // Static fallbacks for known label names
+  const staticAliases: Record<string, (typeof STATUS_KEYS)[number]> = {
+    Name: "status1",
+    name: "status1",
+    NAME: "status1",
+    "Date of Order ID": "status2",
+    "date of order id": "status2",
+    "DATE OF ORDER ID": "status2",
+    Payment: "status3",
+    payment: "status3",
+    PAYMENT: "status3",
+    "Material Dispatched": "status4",
+    "material dispatched": "status4",
+    "MATERIAL DISPATCHED": "status4",
+    Installation: "status5",
+    installation: "status5",
+    INSTALLATION: "status5",
+    "File Submission": "status6",
+    "file submission": "status6",
+    "FILE SUBMISSION": "status6",
+    Meter: "status7",
+    meter: "status7",
+    METER: "status7",
+    Internet: "status8",
+    internet: "status8",
+    INTERNET: "status8",
+    Subsidy: "status9",
+    subsidy: "status9",
+    SUBSIDY: "status9",
+    "Warranty File": "status10",
+    "warranty file": "status10",
+    "WARRANTY FILE": "status10",
+    "Any Pendency": "status11",
+    "any pendency": "status11",
+    "ANY PENDENCY": "status11",
+  };
+  return { ...staticAliases, ...aliases };
+}
 
 function detectPresentColumns(
   rawHeaders: string[],
 ): Set<(typeof STATUS_KEYS)[number]> {
   const present = new Set<(typeof STATUS_KEYS)[number]>();
+  const aliases = buildColumnAliases();
   for (const header of rawHeaders) {
-    const key = STATUS_COLUMN_ALIASES[header.trim()];
+    const key = aliases[header.trim()];
     if (key) present.add(key);
   }
   return present;
@@ -270,7 +264,6 @@ async function parseExcelFile(file: File): Promise<ParseResult> {
           const headers = lines[0].split(",").map((h) => h.trim());
           const presentColumns = detectPresentColumns(headers);
           const rows = lines.slice(1).map((line) => {
-            // Split on comma but preserve values inside quoted strings
             const vals = line
               .split(",")
               .map((v) => v.trim().replace(/^"|"$/g, ""));
@@ -310,9 +303,6 @@ async function parseExcelFile(file: File): Promise<ParseResult> {
           reject(new Error("Failed to read file data"));
           return;
         }
-        // raw: false → SheetJS formats all values as strings (dates become
-        // their display string, numbers stay as their formatted value).
-        // This ensures dates, numbers, special characters all come through.
         const workbook = XLSX.read(data as ArrayBuffer, {
           type: "array",
           raw: false,
@@ -324,7 +314,6 @@ async function parseExcelFile(file: File): Promise<ParseResult> {
           defval: "",
           raw: false,
         });
-        // Detect present columns from the raw keys of the first row
         const rawHeaders = Object.keys(rows[0] ?? {});
         const presentColumns = detectPresentColumns(rawHeaders);
         const orders = mapRowsToOrders(rows as Record<string, unknown>[]);
@@ -352,7 +341,6 @@ function mapRowsToOrders(rows: Record<string, unknown>[]): OrderStatus[] {
     const get = (...keys: string[]) => {
       for (const k of keys) {
         const v = row[k];
-        // Accept any truthy value OR the number 0 — coerce to string
         if (v !== undefined && v !== null && v !== "") {
           return String(v).trim();
         }
@@ -447,6 +435,8 @@ function AllOrdersTable() {
   const [expanded, setExpanded] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
 
+  const activeConfigs = getActiveStatusConfigs();
+
   const handleDelete = async (orderId: string) => {
     try {
       await deleteOrder.mutateAsync(orderId);
@@ -461,33 +451,12 @@ function AllOrdersTable() {
     setIsDownloading(true);
     try {
       const XLSX = await getXLSX();
-      const headers = [
-        "OrderID",
-        "Name",
-        "Date of Order ID",
-        "Payment",
-        "Material Dispatched",
-        "Installation",
-        "File Submission",
-        "Meter",
-        "Internet",
-        "Subsidy",
-        "Warranty File",
-        "Any Pendency",
-      ];
+      const headers = ["OrderID", ...activeConfigs.map((c) => c.label)];
       const dataRows = orders.map((order) => [
         order.orderId,
-        order.status1,
-        order.status2,
-        order.status3,
-        order.status4,
-        order.status5,
-        order.status6,
-        order.status7,
-        order.status8,
-        order.status9,
-        order.status10,
-        order.status11,
+        ...activeConfigs.map(
+          (c) => (order[c.key as keyof OrderStatus] as string) ?? "",
+        ),
       ]);
       const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
       const wb = XLSX.utils.book_new();
@@ -593,9 +562,9 @@ function AllOrdersTable() {
                     <TableHead className="font-semibold text-xs uppercase tracking-wider">
                       Order ID
                     </TableHead>
-                    {STATUS_KEYS.map((key, i) => (
+                    {activeConfigs.map((cfg, i) => (
                       <TableHead
-                        key={key}
+                        key={cfg.key}
                         className="font-semibold text-xs uppercase tracking-wider"
                       >
                         S{i + 1}
@@ -616,12 +585,12 @@ function AllOrdersTable() {
                       <TableCell className="font-mono text-sm font-semibold text-foreground">
                         {order.orderId}
                       </TableCell>
-                      {STATUS_KEYS.map((key) => (
+                      {activeConfigs.map((cfg) => (
                         <TableCell
-                          key={key}
+                          key={cfg.key}
                           className="text-sm text-muted-foreground max-w-[100px] truncate"
                         >
-                          {order[key] || (
+                          {(order[cfg.key as keyof OrderStatus] as string) || (
                             <span className="text-muted-foreground/50">—</span>
                           )}
                         </TableCell>
@@ -665,6 +634,8 @@ function UploadInterface() {
   const bulkUpsert = useBulkUpsertOrders();
   const { data: allOrders } = useGetAllOrders();
 
+  const activeConfigs = getActiveStatusConfigs();
+
   const processFile = useCallback(async (file: File) => {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
       setParseError("Please upload a .xlsx, .xls, or .csv file");
@@ -706,7 +677,6 @@ function UploadInterface() {
     if (!parsedResult) return;
     const { orders: parsedOrders, presentColumns } = parsedResult;
 
-    // Deduplicate: last row per orderId wins
     const deduped = Object.values(
       parsedOrders.reduce<Record<string, OrderStatus>>((acc, order) => {
         acc[order.orderId] = order;
@@ -714,33 +684,25 @@ function UploadInterface() {
       }, {}),
     );
 
-    // Build lookup map from existing backend data
     const existingMap: Record<string, OrderStatus> = {};
     for (const o of allOrders ?? []) {
       existingMap[o.orderId] = o;
     }
 
-    // Merge: for each order, preserve existing values for columns that were
-    // not present in the upload OR were present but blank.
     const merged = deduped.map((uploadedOrder) => {
       const existing = existingMap[uploadedOrder.orderId];
       if (!existing) {
-        // New order — treat missing/blank as empty string (already "")
         return uploadedOrder;
       }
-      // Build a partial record then spread into a full OrderStatus
       const statusFields: Record<string, string> = {};
       for (const key of STATUS_KEYS) {
         const uploadedValue = uploadedOrder[key] as string;
         const existingValue = existing[key] as string;
         if (!presentColumns.has(key)) {
-          // Column not in uploaded file → keep existing
           statusFields[key] = existingValue ?? "";
         } else if (!uploadedValue) {
-          // Column present but blank → keep existing
           statusFields[key] = existingValue ?? "";
         } else {
-          // Column present and non-blank → use uploaded value
           statusFields[key] = uploadedValue;
         }
       }
@@ -775,34 +737,8 @@ function UploadInterface() {
   const hasMore = parsedOrders.length > PREVIEW_LIMIT;
 
   const handleDownloadTemplate = () => {
-    const headers = [
-      "OrderID",
-      "Name",
-      "Date of Order ID",
-      "Payment",
-      "Material Dispatched",
-      "Installation",
-      "File Submission",
-      "Meter",
-      "Internet",
-      "Subsidy",
-      "Warranty File",
-      "Any Pendency",
-    ];
-    const sampleRow = [
-      "ORD-SAMPLE-001",
-      "John Doe",
-      "2024-01-15",
-      "Completed",
-      "Dispatched",
-      "Scheduled",
-      "Submitted",
-      "Installed",
-      "Active",
-      "Approved",
-      "Filed",
-      "None",
-    ];
+    const headers = ["OrderID", ...activeConfigs.map((c) => c.label)];
+    const sampleRow = ["ORD-SAMPLE-001", ...activeConfigs.map(() => "")];
     const csvContent = [headers.join(","), sampleRow.join(",")].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -817,15 +753,12 @@ function UploadInterface() {
 
   return (
     <div className="space-y-6">
-      {/* Hint */}
       <Card className="border-accent/30 bg-accent/10 shadow-none">
         <CardContent className="py-3 px-4">
           <p className="text-xs text-accent-foreground font-medium">
             <span className="font-semibold">Expected columns:</span>{" "}
             <code className="font-mono bg-accent/20 px-1 rounded text-xs">
-              OrderID | Name | Date of Order ID | Payment | Material Dispatched
-              | Installation | File Submission | Meter | Internet | Subsidy |
-              Warranty File | Any Pendency
+              OrderID | {activeConfigs.map((c) => c.label).join(" | ")}
             </code>
             <br />
             <span className="text-accent-foreground/80 mt-1 inline-block">
@@ -838,7 +771,6 @@ function UploadInterface() {
         </CardContent>
       </Card>
 
-      {/* Download template button */}
       <div className="flex justify-end">
         <Button
           variant="outline"
@@ -852,7 +784,6 @@ function UploadInterface() {
         </Button>
       </div>
 
-      {/* Drop zone */}
       <label
         data-ocid="admin.dropzone"
         onDragOver={(e) => {
@@ -908,7 +839,6 @@ function UploadInterface() {
         )}
       </label>
 
-      {/* Parse error */}
       {parseError && (
         <div
           data-ocid="admin.error_state"
@@ -924,7 +854,6 @@ function UploadInterface() {
         </div>
       )}
 
-      {/* Preview table */}
       {parsedOrders.length > 0 && (
         <Card className="shadow-sm border-border animate-slide-up">
           <CardHeader className="pb-3">
@@ -957,9 +886,9 @@ function UploadInterface() {
                     <TableHead className="font-semibold text-xs uppercase tracking-wider">
                       Order ID
                     </TableHead>
-                    {STATUS_KEYS.map((key, i) => (
+                    {activeConfigs.map((cfg, i) => (
                       <TableHead
-                        key={key}
+                        key={cfg.key}
                         className="font-semibold text-xs uppercase tracking-wider"
                       >
                         S{i + 1}
@@ -973,12 +902,12 @@ function UploadInterface() {
                       <TableCell className="font-mono text-sm font-semibold">
                         {order.orderId}
                       </TableCell>
-                      {STATUS_KEYS.map((key) => (
+                      {activeConfigs.map((cfg) => (
                         <TableCell
-                          key={key}
+                          key={cfg.key}
                           className="text-sm text-muted-foreground max-w-[80px] truncate"
                         >
-                          {order[key] || (
+                          {(order[cfg.key as keyof OrderStatus] as string) || (
                             <span className="text-muted-foreground/40">—</span>
                           )}
                         </TableCell>
@@ -995,7 +924,6 @@ function UploadInterface() {
               </p>
             )}
 
-            {/* Submit */}
             {bulkUpsert.isSuccess ? (
               <div
                 data-ocid="admin.success_state"
@@ -1078,6 +1006,8 @@ function ManualEntryForm() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
 
+  const activeConfigs = getActiveStatusConfigs();
+
   const handleStatusChange = (key: string, value: string) => {
     setStatuses((prev) => ({ ...prev, [key]: value }));
     setShowSuccess(false);
@@ -1125,7 +1055,6 @@ function ManualEntryForm() {
       </CardHeader>
       <CardContent>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
-          {/* Order ID */}
           <div className="space-y-1.5">
             <Label htmlFor="manual-order-id" className="text-sm font-medium">
               Order ID <span className="text-destructive">*</span>
@@ -1145,28 +1074,26 @@ function ManualEntryForm() {
             />
           </div>
 
-          {/* Status fields grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {STATUS_KEYS.map((key, i) => (
-              <div key={key} className="space-y-1.5">
+            {activeConfigs.map((cfg) => (
+              <div key={cfg.key} className="space-y-1.5">
                 <Label
-                  htmlFor={`manual-${key}`}
+                  htmlFor={`manual-${cfg.key}`}
                   className="text-sm font-medium text-muted-foreground"
                 >
-                  {STATUS_LABELS[i]}
+                  {cfg.label}
                 </Label>
                 <Input
-                  id={`manual-${key}`}
-                  placeholder={`Enter ${STATUS_LABELS[i]}`}
-                  value={statuses[key]}
-                  onChange={(e) => handleStatusChange(key, e.target.value)}
-                  data-ocid={`admin.manual_entry_${key}_input`}
+                  id={`manual-${cfg.key}`}
+                  placeholder={`Enter ${cfg.label}`}
+                  value={statuses[cfg.key] ?? ""}
+                  onChange={(e) => handleStatusChange(cfg.key, e.target.value)}
+                  data-ocid={`admin.manual_entry_${cfg.key}_input`}
                 />
               </div>
             ))}
           </div>
 
-          {/* Feedback */}
           {showSuccess && (
             <div
               data-ocid="admin.manual_entry_success_state"
@@ -1191,7 +1118,6 @@ function ManualEntryForm() {
             </div>
           )}
 
-          {/* Submit */}
           <div className="pt-1">
             <Button
               type="submit"
@@ -1218,6 +1144,360 @@ function ManualEntryForm() {
   );
 }
 
+// ─── Status Fields Management Tab ─────────────────────────────────────────────
+
+function StatusFieldsManager() {
+  const [configs, setConfigs] = useState<StatusFieldConfig[]>(() =>
+    getStatusFieldConfigs(),
+  );
+  const [saved, setSaved] = useState(false);
+
+  const activeConfigs = configs
+    .filter((c) => c.isActive)
+    .sort((a, b) => a.sequence - b.sequence);
+  const inactiveConfigs = configs.filter((c) => !c.isActive);
+
+  const updateConfig = (key: string, updates: Partial<StatusFieldConfig>) => {
+    setConfigs((prev) =>
+      prev.map((c) => (c.key === key ? { ...c, ...updates } : c)),
+    );
+    setSaved(false);
+  };
+
+  const moveUp = (key: string) => {
+    const sorted = [...activeConfigs];
+    const idx = sorted.findIndex((c) => c.key === key);
+    if (idx <= 0) return;
+    const newConfigs = [...configs];
+    // Swap sequences
+    const a = newConfigs.find((c) => c.key === sorted[idx].key)!;
+    const b = newConfigs.find((c) => c.key === sorted[idx - 1].key)!;
+    const tmpSeq = a.sequence;
+    a.sequence = b.sequence;
+    b.sequence = tmpSeq;
+    setConfigs([...newConfigs]);
+    setSaved(false);
+  };
+
+  const moveDown = (key: string) => {
+    const sorted = [...activeConfigs];
+    const idx = sorted.findIndex((c) => c.key === key);
+    if (idx < 0 || idx >= sorted.length - 1) return;
+    const newConfigs = [...configs];
+    const a = newConfigs.find((c) => c.key === sorted[idx].key)!;
+    const b = newConfigs.find((c) => c.key === sorted[idx + 1].key)!;
+    const tmpSeq = a.sequence;
+    a.sequence = b.sequence;
+    b.sequence = tmpSeq;
+    setConfigs([...newConfigs]);
+    setSaved(false);
+  };
+
+  const reactivate = (key: string, label: string) => {
+    // Find next available sequence number
+    const maxSeq = Math.max(0, ...activeConfigs.map((c) => c.sequence));
+    updateConfig(key, { isActive: true, label, sequence: maxSeq + 1 });
+  };
+
+  const handleSave = () => {
+    saveStatusFieldConfigs(configs);
+    setSaved(true);
+    toast.success("Status field configuration saved!");
+  };
+
+  const handleAddField = () => {
+    if (activeConfigs.length >= 11) {
+      toast.error("All 11 status fields are already active");
+      return;
+    }
+    // Find first STATUS_KEY not already active in configs
+    const activeKeys = new Set(activeConfigs.map((c) => c.key));
+    const nextKey = STATUS_KEYS.find((k) => !activeKeys.has(k));
+    if (!nextKey) {
+      toast.error("All 11 status fields are already active");
+      return;
+    }
+    const maxSeq = Math.max(0, ...activeConfigs.map((c) => c.sequence));
+    const existingInactive = configs.find((c) => c.key === nextKey);
+    if (existingInactive) {
+      // Re-activate the existing inactive entry
+      setConfigs((prev) =>
+        prev.map((c) =>
+          c.key === nextKey
+            ? {
+                ...c,
+                label: "New Status",
+                sequence: maxSeq + 1,
+                isActive: true,
+              }
+            : c,
+        ),
+      );
+    } else {
+      // Add brand-new entry
+      setConfigs((prev) => [
+        ...prev,
+        {
+          key: nextKey,
+          label: "New Status",
+          sequence: maxSeq + 1,
+          loginRequired: false,
+          isActive: true,
+        },
+      ]);
+    }
+    setSaved(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-accent/30 bg-accent/10 shadow-none">
+        <CardContent className="py-3 px-4">
+          <div className="flex items-start gap-2">
+            <Settings className="w-4 h-4 text-accent-foreground mt-0.5 shrink-0" />
+            <p className="text-xs text-accent-foreground font-medium">
+              Configure which status fields are visible, their display names,
+              and whether they require login to view on the public search page.
+              Use the arrows to reorder. Changes take effect after saving.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Active Fields */}
+      <Card className="shadow-sm border-border">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-primary" />
+              Active Status Fields
+              <Badge variant="secondary" className="text-xs">
+                {activeConfigs.length}
+              </Badge>
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAddField}
+              disabled={activeConfigs.length >= 11}
+              data-ocid="admin.add_status_field_button"
+              className="gap-1.5 text-xs font-medium h-8 shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Status Field
+            </Button>
+          </div>
+          <CardDescription className="text-xs">
+            Drag to reorder using the arrows. Toggle &quot;Login Required&quot;
+            to hide from public search. Toggle &quot;Active&quot; to deactivate
+            a field.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2" data-ocid="admin.status_fields_list">
+            {activeConfigs.map((cfg, idx) => (
+              <div
+                key={cfg.key}
+                data-ocid={`admin.status_field.item.${idx + 1}`}
+                className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5 hover:bg-muted/50 transition-colors"
+              >
+                {/* Sequence buttons */}
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => moveUp(cfg.key)}
+                    disabled={idx === 0}
+                    className="h-5 w-5 p-0 disabled:opacity-30"
+                    data-ocid={`admin.status_field.move_up.${idx + 1}`}
+                  >
+                    <ArrowUp className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => moveDown(cfg.key)}
+                    disabled={idx === activeConfigs.length - 1}
+                    className="h-5 w-5 p-0 disabled:opacity-30"
+                    data-ocid={`admin.status_field.move_down.${idx + 1}`}
+                  >
+                    <ArrowDown className="w-3 h-3" />
+                  </Button>
+                </div>
+
+                {/* Sequence badge */}
+                <span className="text-xs font-mono text-muted-foreground w-6 shrink-0 text-center">
+                  {idx + 1}
+                </span>
+
+                {/* Label input */}
+                <Input
+                  value={cfg.label}
+                  onChange={(e) =>
+                    updateConfig(cfg.key, { label: e.target.value })
+                  }
+                  className="flex-1 h-8 text-sm font-medium"
+                  placeholder="Field label"
+                  data-ocid={`admin.status_field.label_input.${idx + 1}`}
+                />
+
+                {/* Login Required toggle */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Label
+                    htmlFor={`login-req-${cfg.key}`}
+                    className="text-xs text-muted-foreground whitespace-nowrap"
+                  >
+                    Login Required
+                  </Label>
+                  <Switch
+                    id={`login-req-${cfg.key}`}
+                    checked={cfg.loginRequired}
+                    onCheckedChange={(val) =>
+                      updateConfig(cfg.key, { loginRequired: val })
+                    }
+                    data-ocid={`admin.status_field.login_required.${idx + 1}`}
+                    className="scale-75"
+                  />
+                </div>
+
+                {/* Active toggle */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Label
+                    htmlFor={`active-${cfg.key}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    Active
+                  </Label>
+                  <Switch
+                    id={`active-${cfg.key}`}
+                    checked={cfg.isActive}
+                    onCheckedChange={(val) =>
+                      updateConfig(cfg.key, { isActive: val })
+                    }
+                    data-ocid={`admin.status_field.active.${idx + 1}`}
+                    className="scale-75"
+                  />
+                </div>
+              </div>
+            ))}
+
+            {activeConfigs.length === 0 && (
+              <div
+                data-ocid="admin.status_fields_empty_state"
+                className="flex flex-col items-center gap-2 py-8 text-center"
+              >
+                <Settings className="w-8 h-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  No active status fields. Re-activate fields below.
+                </p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Inactive Fields */}
+      {inactiveConfigs.length > 0 && (
+        <Card className="shadow-sm border-border">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2 text-muted-foreground">
+              <AlertCircle className="w-4 h-4" />
+              Inactive Fields
+              <Badge variant="outline" className="text-xs">
+                {inactiveConfigs.length}
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-xs">
+              These fields are hidden everywhere. Re-activate to make them
+              visible again.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {inactiveConfigs.map((cfg, idx) => (
+                <InactiveFieldRow
+                  key={cfg.key}
+                  cfg={cfg}
+                  idx={idx}
+                  onReactivate={reactivate}
+                  onUpdateLabel={(key, label) => updateConfig(key, { label })}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Save button */}
+      <div className="flex items-center gap-3">
+        <Button
+          onClick={handleSave}
+          data-ocid="admin.status_fields_save_button"
+          className="gap-2 font-semibold"
+        >
+          <CheckCircle className="w-4 h-4" />
+          Save Configuration
+        </Button>
+        {saved && (
+          <span
+            data-ocid="admin.status_fields_success_state"
+            className="text-sm text-green-600 font-medium animate-fade-in"
+          >
+            ✓ Saved
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface InactiveFieldRowProps {
+  cfg: StatusFieldConfig;
+  idx: number;
+  onReactivate: (key: string, label: string) => void;
+  onUpdateLabel: (key: string, label: string) => void;
+}
+
+function InactiveFieldRow({
+  cfg,
+  idx,
+  onReactivate,
+  onUpdateLabel,
+}: InactiveFieldRowProps) {
+  const [labelInput, setLabelInput] = useState(cfg.label);
+
+  return (
+    <div
+      key={cfg.key}
+      data-ocid={`admin.inactive_field.item.${idx + 1}`}
+      className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/10 px-3 py-2.5 opacity-60"
+    >
+      <span className="text-xs font-mono text-muted-foreground w-20 shrink-0">
+        {cfg.key}
+      </span>
+      <Input
+        value={labelInput}
+        onChange={(e) => {
+          setLabelInput(e.target.value);
+          onUpdateLabel(cfg.key, e.target.value);
+        }}
+        className="flex-1 h-8 text-sm"
+        placeholder="Label"
+        data-ocid={`admin.inactive_field.label_input.${idx + 1}`}
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => onReactivate(cfg.key, labelInput)}
+        data-ocid={`admin.inactive_field.reactivate_button.${idx + 1}`}
+        className="shrink-0 text-xs h-8"
+      >
+        Re-activate
+      </Button>
+    </div>
+  );
+}
+
 // ─── User Management ──────────────────────────────────────────────────────────
 
 function UserManagement() {
@@ -1227,6 +1507,25 @@ function UserManagement() {
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignSuccess, setAssignSuccess] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+
+  // Local users state
+  const [localUsers, setLocalUsers] = useState<LocalUser[]>(() =>
+    getLocalUsers(),
+  );
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<"admin" | "user">("user");
+  const [addUserError, setAddUserError] = useState<string | null>(null);
+
+  // Permissions dialog
+  const [permDialogUser, setPermDialogUser] = useState<LocalUser | null>(null);
+  const [tempPermissions, setTempPermissions] = useState<string[]>([]);
+
+  const activeConfigs = getActiveStatusConfigs();
+
+  const refreshUsers = () => {
+    setLocalUsers(getLocalUsers());
+  };
 
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1261,9 +1560,284 @@ function UserManagement() {
     }
   };
 
+  const handleAddUser = () => {
+    setAddUserError(null);
+    if (!newUsername.trim()) {
+      setAddUserError("Username is required");
+      return;
+    }
+    if (!newPassword.trim()) {
+      setAddUserError("Password is required");
+      return;
+    }
+    const existing = localUsers.find(
+      (u) => u.username.toLowerCase() === newUsername.trim().toLowerCase(),
+    );
+    if (existing) {
+      setAddUserError("A user with this username already exists");
+      return;
+    }
+    const updated = [
+      ...localUsers,
+      {
+        username: newUsername.trim(),
+        password: newPassword.trim(),
+        role: newRole,
+      },
+    ];
+    saveLocalUsers(updated);
+    setLocalUsers(updated);
+    setNewUsername("");
+    setNewPassword("");
+    setNewRole("user");
+    toast.success(`User "${newUsername.trim()}" added`);
+  };
+
+  const handleDeleteUser = (username: string) => {
+    // Protect default admin
+    if (username === ADMIN_USERNAME) {
+      toast.error("Cannot delete the master admin account");
+      return;
+    }
+    const updated = localUsers.filter((u) => u.username !== username);
+    saveLocalUsers(updated);
+    setLocalUsers(updated);
+    toast.success(`User "${username}" removed`);
+  };
+
+  const openPermissions = (user: LocalUser) => {
+    const perms = getUserPermission(user.username);
+    // null = allow all; default to all active fields
+    setTempPermissions(perms ?? activeConfigs.map((c) => c.key));
+    setPermDialogUser(user);
+  };
+
+  const togglePermField = (key: string, checked: boolean) => {
+    setTempPermissions((prev) =>
+      checked ? [...prev, key] : prev.filter((k) => k !== key),
+    );
+  };
+
+  const savePermissions = () => {
+    if (!permDialogUser) return;
+    const allPerms = getUserFieldPermissions();
+    const idx = allPerms.findIndex(
+      (p) => p.username === permDialogUser.username,
+    );
+    if (idx >= 0) {
+      allPerms[idx].allowedFields = tempPermissions;
+    } else {
+      allPerms.push({
+        username: permDialogUser.username,
+        allowedFields: tempPermissions,
+      });
+    }
+    saveUserFieldPermissions(allPerms);
+    toast.success(`Permissions updated for "${permDialogUser.username}"`);
+    setPermDialogUser(null);
+    refreshUsers();
+  };
+
   return (
     <div className="space-y-6">
-      {/* Info banner */}
+      {/* ── Local Users List ── */}
+      <Card className="shadow-sm border-border">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-primary" />
+            <CardTitle className="text-base font-semibold">
+              Local Users
+            </CardTitle>
+            <Badge variant="secondary" className="text-xs">
+              {localUsers.length}
+            </Badge>
+          </div>
+          <CardDescription className="text-xs">
+            Manage local panel users and their field-level editing permissions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div
+            className="overflow-x-auto rounded-lg border border-border"
+            data-ocid="admin.users_table"
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider">
+                    Username
+                  </TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider">
+                    Role
+                  </TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider text-right">
+                    Actions
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {localUsers.map((user, idx) => (
+                  <TableRow
+                    key={user.username}
+                    data-ocid={`admin.users_table.row.${idx + 1}`}
+                    className="hover:bg-muted/30 transition-colors"
+                  >
+                    <TableCell className="font-mono text-sm font-semibold">
+                      {user.username}
+                      {user.username === ADMIN_USERNAME && (
+                        <Badge className="ml-2 text-xs" variant="secondary">
+                          master
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={user.role === "admin" ? "default" : "outline"}
+                        className="text-xs capitalize"
+                      >
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        {user.role !== "admin" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openPermissions(user)}
+                            data-ocid={`admin.users_table.permissions_button.${idx + 1}`}
+                            className="h-7 text-xs gap-1"
+                          >
+                            <KeyRound className="w-3 h-3" />
+                            Permissions
+                          </Button>
+                        )}
+                        {user.username !== ADMIN_USERNAME && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteUser(user.username)}
+                            data-ocid={`admin.users_table.delete_button.${idx + 1}`}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Add New User ── */}
+      <Card className="shadow-sm border-border">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-4 h-4 text-primary" />
+            <CardTitle className="text-base font-semibold">
+              Add New User
+            </CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Create a new local login account for panel access.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-username" className="text-sm font-medium">
+                Username
+              </Label>
+              <Input
+                id="new-username"
+                placeholder="e.g. user01"
+                value={newUsername}
+                onChange={(e) => {
+                  setNewUsername(e.target.value);
+                  setAddUserError(null);
+                }}
+                data-ocid="admin.add_user_username_input"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password" className="text-sm font-medium">
+                Password
+              </Label>
+              <Input
+                id="new-password"
+                type="password"
+                placeholder="••••••••"
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  setAddUserError(null);
+                }}
+                data-ocid="admin.add_user_password_input"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-role" className="text-sm font-medium">
+                Role
+              </Label>
+              <Select
+                value={newRole}
+                onValueChange={(v) => setNewRole(v as "admin" | "user")}
+              >
+                <SelectTrigger
+                  id="new-role"
+                  data-ocid="admin.add_user_role_select"
+                  className="w-full"
+                >
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                      Admin
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="user">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                      User
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {addUserError && (
+            <div
+              data-ocid="admin.add_user_error_state"
+              className="mt-3 flex items-center gap-2 text-sm text-destructive"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {addUserError}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <Button
+              onClick={handleAddUser}
+              data-ocid="admin.add_user_submit_button"
+              className="gap-2 font-semibold"
+            >
+              <UserPlus className="w-4 h-4" />
+              Add User
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      {/* ── Assign Internet Identity Role ── */}
       <Card className="border-accent/30 bg-accent/10 shadow-none">
         <CardContent className="py-3 px-4">
           <div className="flex items-start gap-2">
@@ -1278,13 +1852,12 @@ function UserManagement() {
         </CardContent>
       </Card>
 
-      {/* Assign role form */}
       <Card className="shadow-sm border-border">
         <CardHeader>
           <div className="flex items-center gap-2">
             <UserCog className="w-4 h-4 text-primary" />
             <CardTitle className="text-base font-semibold">
-              Assign User Role
+              Assign Internet Identity Role
             </CardTitle>
           </div>
           <CardDescription className="text-xs">
@@ -1293,7 +1866,6 @@ function UserManagement() {
         </CardHeader>
         <CardContent>
           <form onSubmit={(e) => void handleAssign(e)} className="space-y-4">
-            {/* Principal input */}
             <div className="space-y-1.5">
               <Label htmlFor="user-principal" className="text-sm font-medium">
                 Principal ID <span className="text-destructive">*</span>
@@ -1313,7 +1885,6 @@ function UserManagement() {
               />
             </div>
 
-            {/* Role dropdown */}
             <div className="space-y-1.5">
               <Label htmlFor="user-role" className="text-sm font-medium">
                 Role
@@ -1350,7 +1921,6 @@ function UserManagement() {
               </Select>
             </div>
 
-            {/* Feedback */}
             {assignSuccess && (
               <div
                 data-ocid="admin.user_mgmt_success_state"
@@ -1375,7 +1945,6 @@ function UserManagement() {
               </div>
             )}
 
-            {/* Submit */}
             <div className="pt-1">
               <Button
                 type="submit"
@@ -1399,6 +1968,76 @@ function UserManagement() {
           </form>
         </CardContent>
       </Card>
+
+      {/* ── Permissions Dialog ── */}
+      <Dialog
+        open={!!permDialogUser}
+        onOpenChange={(open) => {
+          if (!open) setPermDialogUser(null);
+        }}
+      >
+        <DialogContent
+          className="max-w-md"
+          data-ocid="admin.permissions_dialog"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              Edit Permissions for{" "}
+              <span className="font-mono text-primary">
+                {permDialogUser?.username}
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Select which status fields this user is allowed to edit. Unchecked
+              fields will be read-only for this user.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 max-h-64 overflow-y-auto py-2">
+            {activeConfigs.map((cfg, idx) => (
+              <div
+                key={cfg.key}
+                className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 hover:bg-muted/30 transition-colors"
+              >
+                <Checkbox
+                  id={`perm-${cfg.key}`}
+                  checked={tempPermissions.includes(cfg.key)}
+                  onCheckedChange={(v) => togglePermField(cfg.key, !!v)}
+                  data-ocid={`admin.permissions_dialog.checkbox.${idx + 1}`}
+                />
+                <Label
+                  htmlFor={`perm-${cfg.key}`}
+                  className="text-sm font-medium cursor-pointer flex-1"
+                >
+                  {cfg.label}
+                </Label>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {cfg.key}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPermDialogUser(null)}
+              data-ocid="admin.permissions_dialog.cancel_button"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={savePermissions}
+              data-ocid="admin.permissions_dialog.confirm_button"
+              className="gap-2"
+            >
+              <CheckCircle className="w-4 h-4" />
+              Save Permissions
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1417,15 +2056,15 @@ const getTodayDate = () => {
 
 interface BOPanelProps {
   onLogout: () => void;
+  username: string;
 }
 
-function BOPanel({ onLogout }: BOPanelProps) {
+function BOPanel({ onLogout, username }: BOPanelProps) {
   const [searchInput, setSearchInput] = useState("");
   const [searchedId, setSearchedId] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Record<string, string>>(() =>
     Object.fromEntries(STATUS_KEYS.map((k) => [k, ""])),
   );
-  // Track which checkboxes are checked (true = date set via checkbox)
   const [checkedKeys, setCheckedKeys] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(STATUS_KEYS.map((k) => [k, false])),
   );
@@ -1435,7 +2074,13 @@ function BOPanel({ onLogout }: BOPanelProps) {
   const { data: order, isFetching: isSearching } = useGetOrder(searchedId);
   const upsertOrder = useUpsertOrder();
 
-  // When a new order is found, pre-fill the fields
+  // Resolve permissions for this user
+  const activeConfigs = getActiveStatusConfigs();
+  const userAllowedFields = getUserPermission(username);
+  // null = allow all; otherwise filter by allowedFields
+  const isFieldEditable = (key: string) =>
+    userAllowedFields === null || userAllowedFields.includes(key);
+
   const prevSearchedId = useRef<string | null>(null);
   if (searchedId !== prevSearchedId.current) {
     prevSearchedId.current = searchedId;
@@ -1444,7 +2089,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
         STATUS_KEYS.map((k) => [k, (order[k] as string) ?? ""]),
       );
       setStatuses(filled);
-      // Pre-check checkboxes for fields that already have a value
       setCheckedKeys(
         Object.fromEntries(STATUS_KEYS.map((k) => [k, !!filled[k]])),
       );
@@ -1453,7 +2097,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
     }
   }
 
-  // Also pre-fill when order data arrives (async)
   const prevOrderRef = useRef<OrderStatus | null | undefined>(undefined);
   if (order !== prevOrderRef.current) {
     prevOrderRef.current = order;
@@ -1462,7 +2105,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
         STATUS_KEYS.map((k) => [k, (order[k] as string) ?? ""]),
       );
       setStatuses(filled);
-      // Pre-check checkboxes for fields that already have a value
       setCheckedKeys(
         Object.fromEntries(STATUS_KEYS.map((k) => [k, !!filled[k]])),
       );
@@ -1487,11 +2129,9 @@ function BOPanel({ onLogout }: BOPanelProps) {
 
   const handleCheckboxChange = (key: string, checked: boolean) => {
     if (checked) {
-      // Set today's date as the value and disable the input
       setStatuses((prev) => ({ ...prev, [key]: getTodayDate() }));
       setCheckedKeys((prev) => ({ ...prev, [key]: true }));
     } else {
-      // Clear the value and re-enable manual input
       setStatuses((prev) => ({ ...prev, [key]: "" }));
       setCheckedKeys((prev) => ({ ...prev, [key]: false }));
     }
@@ -1523,7 +2163,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
-      {/* Header */}
       <div className="flex items-center justify-between animate-slide-up">
         <div>
           <h2 className="font-display text-3xl font-bold text-foreground tracking-tight">
@@ -1535,7 +2174,7 @@ function BOPanel({ onLogout }: BOPanelProps) {
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="secondary" className="text-xs font-medium px-3 py-1">
-            Logged in as: {BO_USERNAME}
+            Logged in as: {username}
           </Badge>
           <Button
             variant="outline"
@@ -1550,7 +2189,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
         </div>
       </div>
 
-      {/* Search card */}
       <Card className="shadow-sm border-border">
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -1597,7 +2235,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
         </CardContent>
       </Card>
 
-      {/* Loading */}
       {isSearching && (
         <div
           data-ocid="bo.loading_state"
@@ -1608,7 +2245,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
         </div>
       )}
 
-      {/* Empty / not-found state */}
       {!isSearching && (!searchedId || orderNotFound) && (
         <div
           data-ocid="bo.empty_state"
@@ -1640,7 +2276,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
         </div>
       )}
 
-      {/* Order edit form */}
       {orderFound && (
         <Card className="shadow-sm border-border animate-slide-up">
           <CardHeader>
@@ -1653,48 +2288,69 @@ function BOPanel({ onLogout }: BOPanelProps) {
             </div>
             <CardDescription className="text-xs">
               Check the checkbox to record today&apos;s date for a status, or
-              type a value manually. Click Save Changes when done.
+              type a value manually. Grayed-out fields are read-only for your
+              account. Click Save Changes when done.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Status fields grid with checkboxes */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {STATUS_KEYS.map((key, i) => (
-                <div
-                  key={key}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                >
-                  <Checkbox
-                    id={`bo-checkbox-${key}`}
-                    checked={checkedKeys[key] ?? false}
-                    onCheckedChange={(checked) =>
-                      handleCheckboxChange(key, !!checked)
-                    }
-                    data-ocid={`bo.checkbox.${i + 1}`}
-                    className="shrink-0"
-                  />
-                  <Label
-                    htmlFor={`bo-checkbox-${key}`}
-                    className="text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer min-w-[90px] shrink-0"
+              {activeConfigs.map((cfg, i) => {
+                const editable = isFieldEditable(cfg.key);
+                return (
+                  <div
+                    key={cfg.key}
+                    className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                      editable
+                        ? "border-border bg-muted/30 hover:bg-muted/50"
+                        : "border-border/50 bg-muted/10 opacity-60"
+                    }`}
                   >
-                    {STATUS_LABELS[i]}
-                  </Label>
-                  <Input
-                    id={`bo-${key}`}
-                    placeholder={
-                      checkedKeys[key] ? "" : `Enter ${STATUS_LABELS[i]}`
-                    }
-                    value={statuses[key]}
-                    onChange={(e) => handleStatusChange(key, e.target.value)}
-                    disabled={checkedKeys[key]}
-                    data-ocid={`bo.${key}_input`}
-                    className="flex-1 h-8 text-sm disabled:opacity-70 disabled:cursor-not-allowed"
-                  />
-                </div>
-              ))}
+                    {editable ? (
+                      <Checkbox
+                        id={`bo-checkbox-${cfg.key}`}
+                        checked={checkedKeys[cfg.key] ?? false}
+                        onCheckedChange={(checked) =>
+                          handleCheckboxChange(cfg.key, !!checked)
+                        }
+                        data-ocid={`bo.checkbox.${i + 1}`}
+                        className="shrink-0"
+                      />
+                    ) : (
+                      <div className="w-4 h-4 shrink-0" />
+                    )}
+                    <Label
+                      htmlFor={`bo-checkbox-${cfg.key}`}
+                      className={`text-xs font-semibold uppercase tracking-wide min-w-[90px] shrink-0 ${
+                        editable
+                          ? "text-muted-foreground cursor-pointer"
+                          : "text-muted-foreground/60"
+                      }`}
+                    >
+                      {cfg.label}
+                      {!editable && (
+                        <span className="ml-1 text-[10px] normal-case tracking-normal">
+                          (read-only)
+                        </span>
+                      )}
+                    </Label>
+                    <Input
+                      id={`bo-${cfg.key}`}
+                      placeholder={
+                        checkedKeys[cfg.key] ? "" : `Enter ${cfg.label}`
+                      }
+                      value={statuses[cfg.key] ?? ""}
+                      onChange={(e) =>
+                        handleStatusChange(cfg.key, e.target.value)
+                      }
+                      disabled={checkedKeys[cfg.key] || !editable}
+                      data-ocid={`bo.${cfg.key}_input`}
+                      className="flex-1 h-8 text-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                    />
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Legend */}
             <p className="text-xs text-muted-foreground">
               <span className="font-medium">Tip:</span> Checking a box
               automatically sets today&apos;s date (
@@ -1702,7 +2358,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
               status. Uncheck to clear and type manually.
             </p>
 
-            {/* Feedback */}
             {saveSuccess && (
               <div
                 data-ocid="bo.success_state"
@@ -1727,7 +2382,6 @@ function BOPanel({ onLogout }: BOPanelProps) {
               </div>
             )}
 
-            {/* Save button */}
             <div className="pt-1">
               <Button
                 onClick={() => void handleSave()}
@@ -1772,13 +2426,10 @@ function LoginForm({ onLogin }: LoginFormProps) {
     setIsSubmitting(true);
     setError(false);
 
-    // Simulate a brief check
     await new Promise((r) => setTimeout(r, 300));
 
-    if (
-      (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) ||
-      (username === BO_USERNAME && password === BO_PASSWORD)
-    ) {
+    const user = validateLogin(username, password);
+    if (user) {
       onLogin(username);
     } else {
       setError(true);
@@ -1891,7 +2542,6 @@ function AdminPanel({
   const { data: isAdmin, isFetching: isCheckingAdmin } = useIsAdmin();
   const { isInitializing } = useInternetIdentity();
 
-  // Master admin (arpit2127) always gets full access, skip backend check
   const hasAccess = isMasterAdmin || isAdmin === true;
 
   if (!isMasterAdmin && (isInitializing || isCheckingAdmin)) {
@@ -1939,7 +2589,6 @@ function AdminPanel({
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
-      {/* Admin header */}
       <div className="flex items-center justify-between animate-slide-up">
         <div>
           <h2 className="font-display text-3xl font-bold text-foreground tracking-tight">
@@ -1971,9 +2620,8 @@ function AdminPanel({
         </div>
       </div>
 
-      {/* Inner tabs */}
       <Tabs defaultValue="upload">
-        <TabsList className="bg-secondary border border-border rounded-xl p-1 gap-1 h-auto mb-6">
+        <TabsList className="bg-secondary border border-border rounded-xl p-1 gap-1 h-auto mb-6 flex-wrap">
           <TabsTrigger
             value="upload"
             data-ocid="admin.upload_tab"
@@ -1991,6 +2639,14 @@ function AdminPanel({
             Manual Entry
           </TabsTrigger>
           <TabsTrigger
+            value="status-fields"
+            data-ocid="admin.status_fields_tab"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+          >
+            <Settings className="w-4 h-4" />
+            Status Fields
+          </TabsTrigger>
+          <TabsTrigger
             value="users"
             data-ocid="admin.users_tab"
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
@@ -2000,21 +2656,22 @@ function AdminPanel({
           </TabsTrigger>
         </TabsList>
 
-        {/* Upload Excel tab */}
         <TabsContent value="upload" className="mt-0 space-y-8">
           <UploadInterface />
           <Separator />
           <AllOrdersTable />
         </TabsContent>
 
-        {/* Manual Entry tab */}
         <TabsContent value="manual" className="mt-0 space-y-8">
           <ManualEntryForm />
           <Separator />
           <AllOrdersTable />
         </TabsContent>
 
-        {/* User Management tab */}
+        <TabsContent value="status-fields" className="mt-0">
+          <StatusFieldsManager />
+        </TabsContent>
+
         <TabsContent value="users" className="mt-0">
           <UserManagement />
         </TabsContent>
@@ -2033,11 +2690,13 @@ export function AdminUpload() {
   const handleLogin = (username: string) => {
     setIsLoggedIn(true);
     setLoggedInUser(username);
+    sessionStorage.setItem("loggedInUser", username);
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
     setLoggedInUser("");
+    sessionStorage.removeItem("loggedInUser");
   };
 
   if (isInitializing && !isLoggedIn) {
@@ -2058,8 +2717,14 @@ export function AdminUpload() {
     return <LoginForm onLogin={handleLogin} />;
   }
 
-  if (loggedInUser === BO_USERNAME) {
-    return <BOPanel onLogout={handleLogout} />;
+  // Any non-admin user (role === "user") gets the restricted BOPanel
+  const users = getLocalUsers();
+  const currentUser = users.find((u) => u.username === loggedInUser);
+  const isAdmin =
+    loggedInUser === ADMIN_USERNAME || currentUser?.role === "admin";
+
+  if (!isAdmin) {
+    return <BOPanel onLogout={handleLogout} username={loggedInUser} />;
   }
 
   return (

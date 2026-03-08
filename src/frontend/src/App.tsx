@@ -52,7 +52,7 @@ export default function App() {
             </TabsList>
 
             <TabsContent value="search" className="animate-fade-in mt-0">
-              <OrderSearch />
+              <OrderSearch onNavigateToAdmin={() => setActiveTab("admin")} />
             </TabsContent>
 
             <TabsContent value="admin" className="animate-fade-in mt-0">
