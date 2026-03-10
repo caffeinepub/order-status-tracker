@@ -8,7 +8,9 @@ import {
   useState,
 } from "react";
 import {
+  DEFAULT_GROUP_FIELD_PERMISSIONS,
   DEFAULT_STATUS_CONFIGS,
+  type GroupFieldPermission,
   type LocalUser,
   type StatusFieldConfig,
   type UserFieldPermission,
@@ -23,6 +25,7 @@ interface AppConfigContextValue {
   activeStatusConfigs: StatusFieldConfig[];
   localUsers: LocalUser[];
   userFieldPermissions: UserFieldPermission[];
+  groupFieldPermissions: GroupFieldPermission[];
   isLoading: boolean;
 
   // Save functions (async, persist to backend)
@@ -31,6 +34,7 @@ interface AppConfigContextValue {
   saveUserFieldPermissions: (
     permissions: UserFieldPermission[],
   ) => Promise<void>;
+  saveGroupFieldPermissions: (perms: GroupFieldPermission[]) => Promise<void>;
 
   // Helpers
   validateLogin: (username: string, password: string) => LocalUser | null;
@@ -73,6 +77,24 @@ function mergeLocalUsers(stored: LocalUser[]): LocalUser[] {
   return merged;
 }
 
+function mergeGroupPermissions(
+  stored: GroupFieldPermission[],
+): GroupFieldPermission[] {
+  if (!Array.isArray(stored) || stored.length === 0)
+    return DEFAULT_GROUP_FIELD_PERMISSIONS;
+  // Ensure all predefined groups are present
+  const merged = [...DEFAULT_GROUP_FIELD_PERMISSIONS];
+  for (const grp of stored) {
+    const idx = merged.findIndex((g) => g.groupName === grp.groupName);
+    if (idx >= 0) {
+      merged[idx] = grp;
+    } else {
+      merged.push(grp);
+    }
+  }
+  return merged;
+}
+
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 const ACTOR_WAIT_TIMEOUT = 10_000;
@@ -109,6 +131,9 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
   const [userFieldPermissions, setUserFieldPermissions] = useState<
     UserFieldPermission[]
   >([]);
+  const [groupFieldPermissions, setGroupFieldPermissions] = useState<
+    GroupFieldPermission[]
+  >(DEFAULT_GROUP_FIELD_PERMISSIONS);
   const [isLoading, setIsLoading] = useState(true);
 
   // Track whether we've already fetched (to avoid double-fetch on actor re-render)
@@ -121,11 +146,13 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
     const fetchAll = async () => {
       setIsLoading(true);
       try {
-        const [configsRaw, usersRaw, permsRaw] = await Promise.all([
-          actor.getAppConfig("statusFieldConfigs"),
-          actor.getAppConfig("localUsers"),
-          actor.getAppConfig("userFieldPermissions"),
-        ]);
+        const [configsRaw, usersRaw, permsRaw, groupPermsRaw] =
+          await Promise.all([
+            actor.getAppConfig("statusFieldConfigs"),
+            actor.getAppConfig("localUsers"),
+            actor.getAppConfig("userFieldPermissions"),
+            actor.getAppConfig("groupFieldPermissions"),
+          ]);
 
         // Parse and merge statusFieldConfigs
         if (configsRaw) {
@@ -162,12 +189,27 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
         } else {
           setUserFieldPermissions([]);
         }
+
+        // Parse groupFieldPermissions
+        if (groupPermsRaw) {
+          try {
+            const parsed = JSON.parse(groupPermsRaw) as GroupFieldPermission[];
+            setGroupFieldPermissions(
+              mergeGroupPermissions(Array.isArray(parsed) ? parsed : []),
+            );
+          } catch {
+            setGroupFieldPermissions(DEFAULT_GROUP_FIELD_PERMISSIONS);
+          }
+        } else {
+          setGroupFieldPermissions(DEFAULT_GROUP_FIELD_PERMISSIONS);
+        }
       } catch (err) {
         console.error("[AppConfig] Failed to load config from backend:", err);
         // Fall back to defaults on error
         setStatusConfigs(DEFAULT_STATUS_CONFIGS);
         setLocalUsers(DEFAULT_LOCAL_USERS);
         setUserFieldPermissions([]);
+        setGroupFieldPermissions(DEFAULT_GROUP_FIELD_PERMISSIONS);
       } finally {
         setIsLoading(false);
       }
@@ -209,6 +251,19 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const saveGroupFieldPermissions = useCallback(
+    async (perms: GroupFieldPermission[]) => {
+      // Optimistic update
+      setGroupFieldPermissions(perms);
+      const resolvedActor = await waitForActor(actorRef);
+      await resolvedActor.setAppConfig(
+        "groupFieldPermissions",
+        JSON.stringify(perms),
+      );
+    },
+    [],
+  );
+
   const activeStatusConfigs = statusConfigs
     .filter((c) => c.isActive)
     .sort((a, b) => a.sequence - b.sequence);
@@ -224,12 +279,51 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
     [localUsers],
   );
 
+  /**
+   * Returns effective editable field keys for a user.
+   * - Admin role → null (all fields allowed)
+   * - Otherwise → union of individual UserFieldPermission + all their assigned groups' allowedFields
+   * - If no permissions at all → empty array (can edit nothing)
+   */
   const getUserPermission = useCallback(
     (username: string): string[] | null => {
-      const entry = userFieldPermissions.find((p) => p.username === username);
-      return entry ? entry.allowedFields : null;
+      // Look up the user to check role
+      const user = localUsers.find((u) => u.username === username);
+      if (user?.role === "admin") return null; // admin = all access
+
+      // Collect individual permission override
+      const individualPerm = userFieldPermissions.find(
+        (p) => p.username === username,
+      );
+
+      // Collect group-based permissions
+      const userGroups = user?.groups ?? [];
+      const groupAllowedFields = new Set<string>();
+      for (const groupName of userGroups) {
+        const grpPerm = groupFieldPermissions.find(
+          (g) => g.groupName === groupName,
+        );
+        if (grpPerm) {
+          for (const f of grpPerm.allowedFields) {
+            groupAllowedFields.add(f);
+          }
+        }
+      }
+
+      // If user has individual override, union it with group permissions
+      if (individualPerm) {
+        const combined = new Set([
+          ...individualPerm.allowedFields,
+          ...groupAllowedFields,
+        ]);
+        return Array.from(combined);
+      }
+
+      // No individual override — use group permissions only
+      // If user has no groups either, return empty array (can edit nothing)
+      return Array.from(groupAllowedFields);
     },
-    [userFieldPermissions],
+    [localUsers, userFieldPermissions, groupFieldPermissions],
   );
 
   // Show a full-screen spinner while loading config on app startup
@@ -249,10 +343,12 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
         activeStatusConfigs,
         localUsers,
         userFieldPermissions,
+        groupFieldPermissions,
         isLoading,
         saveStatusConfigs,
         saveLocalUsers,
         saveUserFieldPermissions,
+        saveGroupFieldPermissions,
         validateLogin,
         getUserPermission,
       }}

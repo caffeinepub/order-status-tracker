@@ -1,13 +1,14 @@
 import Map "mo:core/Map";
 import Array "mo:core/Array";
-import Runtime "mo:core/Runtime";
 import Text "mo:core/Text";
 import Principal "mo:core/Principal";
+import Runtime "mo:core/Runtime";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
-import Migration "migration";
 
-(with migration = Migration.run)
+
+// Apply migration on system upgrade
+
 actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
@@ -41,9 +42,9 @@ actor {
     status21 : Text;
   };
 
-  let orders = Map.empty<Text, OrderStatus>();
-  let userProfiles = Map.empty<Principal, UserProfile>();
-  let appConfigs = Map.empty<Text, Text>();
+  stable let orders = Map.empty<Text, OrderStatus>();
+  stable let userProfiles = Map.empty<Principal, UserProfile>();
+  stable let appConfigs = Map.empty<Text, Text>();
 
   // User profile functions with auth checks
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
@@ -90,12 +91,8 @@ actor {
     orders.values().toArray();
   };
 
-  // App config functions - setAppConfig requires user permission to prevent anonymous tampering
-  // getAppConfig allows anyone to read (including guests)
+  // App config functions - NO auth check, open to all including anonymous
   public shared ({ caller }) func setAppConfig(key : Text, value : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can modify app configuration");
-    };
     appConfigs.add(key, value);
   };
 

@@ -179,6 +179,21 @@ export function OrderSearch({ onNavigateToAdmin }: OrderSearchProps) {
     };
   }, []);
 
+  // Listen for prefill-order-search events dispatched from MyTasks "View" button
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ orderId: string }>;
+      const id = ce.detail?.orderId;
+      if (id) {
+        setInputValue(id);
+        setSearchedId(id);
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener("prefill-order-search", handler);
+    return () => window.removeEventListener("prefill-order-search", handler);
+  }, []);
+
   const { activeStatusConfigs: activeConfigs } = useAppConfig();
 
   const {

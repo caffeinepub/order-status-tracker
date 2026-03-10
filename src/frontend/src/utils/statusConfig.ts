@@ -17,7 +17,28 @@ export type LocalUser = {
   username: string;
   role: "admin" | "user";
   password: string;
+  groups?: string[]; // list of group names assigned to this user
 };
+
+export type GroupFieldPermission = {
+  groupName: string; // "BO" | "Tech" | "HOD" | "Installer" | "Seller"
+  allowedFields: string[]; // list of status keys this group can edit
+};
+
+export const PREDEFINED_GROUPS = [
+  "BO",
+  "Tech",
+  "HOD",
+  "Installer",
+  "Seller",
+] as const;
+export type PredefinedGroup = (typeof PREDEFINED_GROUPS)[number];
+
+export const DEFAULT_GROUP_FIELD_PERMISSIONS: GroupFieldPermission[] =
+  PREDEFINED_GROUPS.map((g) => ({
+    groupName: g,
+    allowedFields: [],
+  }));
 
 // ─── Default values ───────────────────────────────────────────────────────────
 
@@ -191,7 +212,6 @@ export function getStatusFieldConfigs(): StatusFieldConfig[] {
     const parsed = JSON.parse(raw) as StatusFieldConfig[];
     if (!Array.isArray(parsed) || parsed.length === 0)
       return DEFAULT_STATUS_CONFIGS;
-    // Merge in any new default keys missing from stored config (e.g. after adding more status fields)
     const storedKeys = new Set(parsed.map((c) => c.key));
     const missingDefaults = DEFAULT_STATUS_CONFIGS.filter(
       (c) => !storedKeys.has(c.key),
@@ -232,10 +252,6 @@ export function saveUserFieldPermissions(
   localStorage.setItem(PERMISSIONS_KEY, JSON.stringify(permissions));
 }
 
-/**
- * Returns the list of allowed field keys for a user.
- * Returns null if the user has no specific permissions entry (= allow all active fields).
- */
 export function getUserPermission(username: string): string[] | null {
   const all = getUserFieldPermissions();
   const entry = all.find((p) => p.username === username);
@@ -252,12 +268,10 @@ export function getLocalUsers(): LocalUser[] {
       const parsed = JSON.parse(raw) as LocalUser[];
       stored = Array.isArray(parsed) ? parsed : [];
     }
-    // Always ensure the default seed users are present
     const merged = [...DEFAULT_LOCAL_USERS];
     for (const user of stored) {
       const existingIdx = merged.findIndex((u) => u.username === user.username);
       if (existingIdx >= 0) {
-        // Allow overriding default users' data from storage (e.g. password changes)
         merged[existingIdx] = user;
       } else {
         merged.push(user);
@@ -273,7 +287,6 @@ export function saveLocalUsers(users: LocalUser[]): void {
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 }
 
-/** Validate login credentials against local users list */
 export function validateLogin(
   username: string,
   password: string,

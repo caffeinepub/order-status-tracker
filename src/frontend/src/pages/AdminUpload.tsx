@@ -49,6 +49,7 @@ import {
   Download,
   FileSpreadsheet,
   KeyRound,
+  Layers,
   Loader2,
   LogOut,
   Plus,
@@ -84,10 +85,12 @@ import {
   useUpsertOrder,
 } from "../hooks/useQueries";
 import type {
+  GroupFieldPermission,
   LocalUser,
   StatusFieldConfig,
   UserFieldPermission,
 } from "../utils/statusConfig";
+import { PREDEFINED_GROUPS } from "../utils/statusConfig";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1552,6 +1555,188 @@ function InactiveFieldRow({
   );
 }
 
+// ─── Group Permissions Manager ────────────────────────────────────────────────
+
+function GroupPermissionsManager() {
+  const {
+    groupFieldPermissions: backendGroupPerms,
+    activeStatusConfigs: activeConfigs,
+    saveGroupFieldPermissions,
+  } = useAppConfig();
+
+  // Initialize local state ensuring all predefined groups are present
+  const initGroups = () => {
+    return PREDEFINED_GROUPS.map((name) => {
+      const existing = backendGroupPerms.find((g) => g.groupName === name);
+      return existing ?? { groupName: name, allowedFields: [] };
+    });
+  };
+
+  const [groups, setGroups] = useState<GroupFieldPermission[]>(initGroups);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Keep in sync when backend data changes
+  const prevBackendRef = useRef(backendGroupPerms);
+  if (prevBackendRef.current !== backendGroupPerms) {
+    prevBackendRef.current = backendGroupPerms;
+    setGroups(initGroups());
+  }
+
+  const toggleField = (
+    groupName: string,
+    fieldKey: string,
+    checked: boolean,
+  ) => {
+    setGroups((prev) =>
+      prev.map((g) => {
+        if (g.groupName !== groupName) return g;
+        const fields = checked
+          ? [...g.allowedFields, fieldKey]
+          : g.allowedFields.filter((k) => k !== fieldKey);
+        return { ...g, allowedFields: fields };
+      }),
+    );
+    setSaved(false);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await saveGroupFieldPermissions(groups);
+      setSaved(true);
+      toast.success("Group permissions saved!");
+    } catch {
+      toast.error("Failed to save group permissions. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const GROUP_COLORS: Record<string, string> = {
+    BO: "bg-blue-100 text-blue-800 border-blue-200",
+    Tech: "bg-purple-100 text-purple-800 border-purple-200",
+    HOD: "bg-amber-100 text-amber-800 border-amber-200",
+    Installer: "bg-green-100 text-green-800 border-green-200",
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-accent/30 bg-accent/10 shadow-none">
+        <CardContent className="py-3 px-4">
+          <div className="flex items-start gap-2">
+            <Layers className="w-4 h-4 text-accent-foreground mt-0.5 shrink-0" />
+            <p className="text-xs text-accent-foreground font-medium">
+              Configure which status fields each group can edit. Users assigned
+              to a group will be able to edit those fields. A user can be
+              assigned to multiple groups — their permissions will be combined.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {groups.map((group, groupIdx) => {
+          const allowedCount = group.allowedFields.filter((k) =>
+            activeConfigs.some((c) => c.key === k),
+          ).length;
+          const colorClass =
+            GROUP_COLORS[group.groupName] ??
+            "bg-muted text-foreground border-border";
+          return (
+            <Card
+              key={group.groupName}
+              data-ocid={`admin.group.card.${groupIdx + 1}`}
+              className="shadow-sm border-border"
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-semibold border ${colorClass}`}
+                    >
+                      {group.groupName}
+                    </span>
+                    <Badge variant="secondary" className="text-xs">
+                      {allowedCount} field{allowedCount !== 1 ? "s" : ""}
+                    </Badge>
+                  </div>
+                </div>
+                <CardDescription className="text-xs mt-1">
+                  Select which status fields this group can edit.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {activeConfigs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No active status fields configured yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {activeConfigs.map((cfg, fieldIdx) => (
+                      <div
+                        key={cfg.key}
+                        className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/30 transition-colors"
+                      >
+                        <Checkbox
+                          id={`group-${group.groupName}-${cfg.key}`}
+                          checked={group.allowedFields.includes(cfg.key)}
+                          onCheckedChange={(checked) =>
+                            toggleField(group.groupName, cfg.key, !!checked)
+                          }
+                          data-ocid={`admin.group.${groupIdx + 1}.checkbox.${fieldIdx + 1}`}
+                        />
+                        <Label
+                          htmlFor={`group-${group.groupName}-${cfg.key}`}
+                          className="text-sm font-medium cursor-pointer flex-1"
+                        >
+                          {cfg.label}
+                        </Label>
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {cfg.key}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button
+          onClick={() => void handleSave()}
+          disabled={isSaving}
+          data-ocid="admin.group_permissions_save_button"
+          className="gap-2 font-semibold"
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving…
+            </>
+          ) : (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              Save Group Permissions
+            </>
+          )}
+        </Button>
+        {saved && (
+          <span
+            data-ocid="admin.group_permissions_success_state"
+            className="text-sm text-green-600 font-medium animate-fade-in"
+          >
+            ✓ Saved
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── User Management ──────────────────────────────────────────────────────────
 
 function UserManagement() {
@@ -1579,6 +1764,9 @@ function UserManagement() {
   // Permissions dialog
   const [permDialogUser, setPermDialogUser] = useState<LocalUser | null>(null);
   const [tempPermissions, setTempPermissions] = useState<string[]>([]);
+
+  // Group assignment saving state
+  const [savingGroupsFor, setSavingGroupsFor] = useState<string | null>(null);
 
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1732,6 +1920,9 @@ function UserManagement() {
                   <TableHead className="font-semibold text-xs uppercase tracking-wider">
                     Role
                   </TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider">
+                    Groups
+                  </TableHead>
                   <TableHead className="font-semibold text-xs uppercase tracking-wider text-right">
                     Actions
                   </TableHead>
@@ -1759,6 +1950,73 @@ function UserManagement() {
                       >
                         {user.role}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {user.role === "admin" ||
+                      user.username === ADMIN_USERNAME ? (
+                        <span className="text-xs text-muted-foreground italic">
+                          Admin (All Access)
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {PREDEFINED_GROUPS.map((groupName) => {
+                            const isInGroup = (user.groups ?? []).includes(
+                              groupName,
+                            );
+                            const isSaving = savingGroupsFor === user.username;
+                            return (
+                              <button
+                                key={groupName}
+                                type="button"
+                                disabled={isSaving}
+                                onClick={async () => {
+                                  setSavingGroupsFor(user.username);
+                                  const currentGroups = user.groups ?? [];
+                                  const updatedGroups = isInGroup
+                                    ? currentGroups.filter(
+                                        (g) => g !== groupName,
+                                      )
+                                    : [...currentGroups, groupName];
+                                  const updatedUsers = localUsers.map((u) =>
+                                    u.username === user.username
+                                      ? { ...u, groups: updatedGroups }
+                                      : u,
+                                  );
+                                  try {
+                                    await saveLocalUsers(updatedUsers);
+                                    toast.success(
+                                      isInGroup
+                                        ? `Removed ${user.username} from ${groupName}`
+                                        : `Added ${user.username} to ${groupName}`,
+                                    );
+                                  } catch {
+                                    toast.error(
+                                      "Failed to update group assignment",
+                                    );
+                                  } finally {
+                                    setSavingGroupsFor(null);
+                                  }
+                                }}
+                                data-ocid={`admin.users_table.group_toggle.${idx + 1}`}
+                                className={[
+                                  "inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border transition-all",
+                                  isInGroup
+                                    ? "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
+                                    : "bg-muted text-muted-foreground border-border hover:bg-muted/80",
+                                  isSaving
+                                    ? "opacity-50 cursor-not-allowed"
+                                    : "cursor-pointer",
+                                ].join(" ")}
+                              >
+                                {isSaving ? (
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" />
+                                ) : null}
+                                {groupName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
@@ -2711,6 +2969,14 @@ function AdminPanel({
             Status Fields
           </TabsTrigger>
           <TabsTrigger
+            value="groups"
+            data-ocid="admin.groups_tab"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
+          >
+            <Layers className="w-4 h-4" />
+            Groups
+          </TabsTrigger>
+          <TabsTrigger
             value="users"
             data-ocid="admin.users_tab"
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
@@ -2734,6 +3000,10 @@ function AdminPanel({
 
         <TabsContent value="status-fields" className="mt-0">
           <StatusFieldsManager />
+        </TabsContent>
+
+        <TabsContent value="groups" className="mt-0">
+          <GroupPermissionsManager />
         </TabsContent>
 
         <TabsContent value="users" className="mt-0">
